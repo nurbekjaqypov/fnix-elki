@@ -1,0 +1,197 @@
+/**
+ * FNIX Ёлки — бэкенд на Google Apps Script.
+ * Хранит все данные сайта в этой Google Таблице.
+ *
+ * Установка (один раз):
+ * 1. Расширения → Apps Script → вставить этот код целиком → Сохранить.
+ * 2. Выбрать функцию setup → Выполнить → разрешить доступ.
+ *    В журнале появится ПИН-код — запишите его, он нужен для входа на сайт.
+ * 3. Развернуть → Новое развертывание → Тип: Веб-приложение,
+ *    Выполнять как: Я, Доступ: Все → Развернуть → скопировать URL.
+ */
+
+var SCHEMA = {
+  'ДДС': [['id','ID'],['date','Дата'],['channel','Канал'],['kind','Вид расхода'],['item','Статья'],
+          ['counterparty','Контрагент'],['payment','Способ оплаты'],['amount','Сумма'],['purpose','Назначение'],
+          ['created','Создано'],['updated','Изменено'],['deleted','Удалено']],
+  'ДДС_История': [['ts','Время'],['action','Действие'],['id','ID записи'],['data','Данные']],
+  'Себестоимость': [['id','ID'],['name','Наименование'],['cost','Себестоимость'],['updated','Изменено']],
+  'Сопоставление': [['id','ID'],['kaspi','Название в Kaspi'],['name','Наше наименование'],['type','Тип карточки']],
+  'Kaspi': [['id','ID'],['order','№ заказа'],['date','Дата'],['kaspi','Название в Kaspi'],['sku','Артикул'],
+            ['sum','Сумма'],['qty','Кол-во'],['status','Статус'],['logistics','Логистика'],['city','Город']],
+  'Опт': [['id','ID'],['date','Дата'],['buyer','Покупатель'],['model','Модель'],['qty','Кол-во'],['sum','Сумма'],
+          ['note','Примечание'],['created','Создано']],
+  'Фуры': [['id','ID'],['date','Дата'],['truck','Фура'],['contract','№ контракта'],['goods','Товары'],
+           ['goodsSum','Оплата за товар'],['payStatus','Статус оплаты'],['driver','Водителю (растаможка)'],
+           ['border','Китайцам на границе'],['extra','Доп. расходы'],['note','Примечание']]
+};
+
+// Листы, где записи нельзя удалять физически
+var PROTECTED = { 'ДДС': true };
+var BACKUP_FOLDER = 'FNIX Ёлки — бэкапы';
+var BACKUP_KEEP = 30;
+
+function setup() {
+  var ss = SpreadsheetApp.getActive();
+  Object.keys(SCHEMA).forEach(function (name) { sheet_(name); });
+  var props = PropertiesService.getScriptProperties();
+  var pin = props.getProperty('PIN');
+  if (!pin) {
+    pin = String(Math.floor(100000 + Math.random() * 900000));
+    props.setProperty('PIN', pin);
+  }
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'dailyBackup') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(3).create();
+  Logger.log('Готово. ПИН для входа на сайт: ' + pin);
+}
+
+function sheet_(name) {
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  var titles = SCHEMA[name].map(function (c) { return c[1]; });
+  var cur = sh.getRange(1, 1, 1, titles.length).getValues()[0];
+  if (cur.join('|') !== titles.join('|')) {
+    sh.getRange(1, 1, 1, titles.length).setValues([titles]).setFontWeight('bold').setBackground('#0f3d2e').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function checkPin_(pin) {
+  return String(pin) === PropertiesService.getScriptProperties().getProperty('PIN');
+}
+
+function rows_(name) {
+  var sh = sheet_(name), keys = SCHEMA[name].map(function (c) { return c[0]; });
+  var n = sh.getLastRow() - 1;
+  if (n < 1) return [];
+  return sh.getRange(2, 1, n, keys.length).getValues().map(function (r) {
+    var o = {};
+    keys.forEach(function (k, i) {
+      var v = r[i];
+      if (v instanceof Date) v = Utilities.formatDate(v, 'Asia/Almaty', k === 'ts' || k === 'created' || k === 'updated' ? "yyyy-MM-dd'T'HH:mm:ss" : 'yyyy-MM-dd');
+      o[k] = v;
+    });
+    return o;
+  }).filter(function (o) { return o[keys[0]] !== ''; });
+}
+
+function toRow_(name, o) {
+  return SCHEMA[name].map(function (c) {
+    var v = o[c[0]];
+    return v === undefined || v === null ? '' : v;
+  });
+}
+
+function doGet(e) {
+  if (!checkPin_(e.parameter.pin)) return json_({ ok: false, error: 'pin' });
+  var out = {};
+  Object.keys(SCHEMA).forEach(function (name) {
+    if (name !== 'ДДС_История') out[name] = rows_(name);
+  });
+  return json_({ ok: true, data: out });
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var req = JSON.parse(e.postData.contents);
+    if (!checkPin_(req.pin)) return json_({ ok: false, error: 'pin' });
+    var name = req.sheet;
+    if (!SCHEMA[name] || name === 'ДДС_История') return json_({ ok: false, error: 'sheet' });
+    if (req.action === 'upsert') return json_(upsert_(name, req.rows || []));
+    if (req.action === 'delete') return json_(remove_(name, req.ids || []));
+    return json_({ ok: false, error: 'action' });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function upsert_(name, list) {
+  var sh = sheet_(name), width = SCHEMA[name].length;
+  var n = sh.getLastRow() - 1;
+  var data = n > 0 ? sh.getRange(2, 1, n, width).getValues() : [];
+  var index = {};
+  data.forEach(function (r, i) { index[String(r[0])] = i; });
+  var now = Utilities.formatDate(new Date(), 'Asia/Almaty', "yyyy-MM-dd'T'HH:mm:ss");
+  var append = [], hist = [], changed = false;
+  list.forEach(function (o) {
+    var id = String(o.id);
+    if (name === 'ДДС') {
+      o.updated = now;
+      if (!o.created) o.created = now;
+    }
+    var row = toRow_(name, o);
+    if (index[id] !== undefined && index[id] >= 0) {
+      data[index[id]] = row;
+      changed = true;
+      if (name === 'ДДС') hist.push([now, 'изменение', id, JSON.stringify(o)]);
+    } else if (index[id] === undefined) {
+      append.push(row);
+      index[id] = -1;
+      if (name === 'ДДС') hist.push([now, 'создание', id, JSON.stringify(o)]);
+    }
+  });
+  if (changed) sh.getRange(2, 1, data.length, width).setValues(data);
+  if (append.length) sh.getRange(n + 2, 1, append.length, width).setValues(append);
+  if (hist.length) log_(hist);
+  return { ok: true, count: list.length };
+}
+
+function remove_(name, ids) {
+  var sh = sheet_(name);
+  var n = sh.getLastRow() - 1;
+  if (n < 1) return { ok: true, count: 0 };
+  var want = {};
+  ids.forEach(function (id) { want[String(id)] = true; });
+  var col = sh.getRange(2, 1, n, 1).getValues();
+  var now = Utilities.formatDate(new Date(), 'Asia/Almaty', "yyyy-MM-dd'T'HH:mm:ss");
+  if (PROTECTED[name]) {
+    // ДДС: мягкое удаление — запись остаётся в таблице с отметкой
+    var delCol = SCHEMA[name].map(function (c) { return c[0]; }).indexOf('deleted') + 1;
+    var hist = [];
+    col.forEach(function (r, i) {
+      if (want[String(r[0])]) {
+        sh.getRange(i + 2, delCol).setValue(now);
+        hist.push([now, 'удаление', String(r[0]), '']);
+      }
+    });
+    if (hist.length) log_(hist);
+    return { ok: true, count: hist.length };
+  }
+  var width = SCHEMA[name].length;
+  var data = sh.getRange(2, 1, n, width).getValues();
+  var keep = data.filter(function (r) { return !want[String(r[0])]; });
+  var count = data.length - keep.length;
+  if (count) {
+    sh.getRange(2, 1, n, width).clearContent();
+    if (keep.length) sh.getRange(2, 1, keep.length, width).setValues(keep);
+  }
+  return { ok: true, count: count };
+}
+
+function log_(rows) {
+  var sh = sheet_('ДДС_История');
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
+}
+
+function dailyBackup() {
+  var file = DriveApp.getFileById(SpreadsheetApp.getActive().getId());
+  var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(BACKUP_FOLDER);
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Almaty', 'yyyy-MM-dd');
+  file.makeCopy(file.getName() + ' — бэкап ' + stamp, folder);
+  var all = [], it = folder.getFiles();
+  while (it.hasNext()) all.push(it.next());
+  all.sort(function (a, b) { return b.getDateCreated() - a.getDateCreated(); });
+  all.slice(BACKUP_KEEP).forEach(function (f) { f.setTrashed(true); });
+}

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FNIX Ёлки — отчёт</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎄</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="snow" aria-hidden="true"></canvas>
+
+<div id="login" class="login hidden">
+  <div class="login-card">
+    <div class="login-tree">🎄</div>
+    <h1>FNIX Ёлки</h1>
+    <p>Введите ПИН-код</p>
+    <form id="loginForm">
+      <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••">
+      <button class="btn gold" type="submit">Войти</button>
+    </form>
+    <div id="loginErr" class="err"></div>
+  </div>
+</div>
+
+<header class="top">
+  <div class="garland" aria-hidden="true"></div>
+  <div class="top-row">
+    <div class="brand">
+      <span class="brand-mark">🎄</span>
+      <div>
+        <div class="brand-name">FNIX Ёлки</div>
+        <div class="brand-sub">Отчёт по продажам · Grantel</div>
+      </div>
+    </div>
+    <div class="sync" id="sync"><span class="dot"></span><span id="syncText">Загрузка…</span></div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="kaspi" class="active">Продажи Kaspi</button>
+    <button data-tab="cost">Себестоимость</button>
+    <button data-tab="dds">ДДС</button>
+    <button data-tab="pnl">ОПиУ</button>
+    <button data-tab="opt">Опт</button>
+    <button data-tab="trucks">Фуры</button>
+  </nav>
+</header>
+
+<main id="main">
+
+<!-- ===== Kaspi ===== -->
+<section id="tab-kaspi" class="tab active">
+  <div class="toolbar">
+    <label class="btn gold file-btn">Загрузить архив Kaspi<input type="file" id="kaspiFile" accept=".xlsx,.xls"></label>
+    <div class="period" data-period="kaspi"></div>
+    <div class="seg" id="kaspiSeg">
+      <button data-v="all" class="on">Все карточки</button>
+      <button data-v="fnix">FNIX</button>
+      <button data-v="other">Общие</button>
+    </div>
+  </div>
+  <div id="mapAlert" class="alert hidden"></div>
+  <div class="kpis" id="kaspiKpis"></div>
+  <div class="grid2">
+    <div class="card"><h3>Выручка и прибыль по дням</h3><div class="chart-box"><canvas id="kaspiChart"></canvas></div></div>
+    <div class="card"><h3>FNIX против общих карточек</h3><div id="kaspiSplit"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>По товарам</h3>
+      <div class="head-actions">
+        <button class="btn ghost sm" id="tplBtn">Скачать шаблон сопоставления</button>
+        <label class="btn ghost sm file-btn">Загрузить шаблон<input type="file" id="tplFile" accept=".xlsx,.xls"></label>
+        <button class="btn ghost sm danger" id="kaspiClear">Очистить архив</button>
+      </div>
+    </div>
+    <div class="table-wrap"><table id="kaspiTable"></table></div>
+  </div>
+</section>
+
+<!-- ===== Себестоимость ===== -->
+<section id="tab-cost" class="tab">
+  <div class="card">
+    <div class="card-head"><h3>Себестоимость товаров</h3>
+      <form id="costAdd" class="inline-form">
+        <input name="name" placeholder="Наименование" required>
+        <input name="cost" type="number" step="any" placeholder="Себестоимость, ₸" required>
+        <button class="btn gold sm">Добавить</button>
+      </form>
+    </div>
+    <p class="hint">Список собирается из сопоставления карточек Kaspi и оптовых продаж. Впишите цену — она сохраняется сразу.</p>
+    <div class="table-wrap"><table id="costTable"></table></div>
+  </div>
+</section>
+
+<!-- ===== ДДС ===== -->
+<section id="tab-dds" class="tab">
+  <div class="card">
+    <h3 id="ddsFormTitle">Новый расход</h3>
+    <form id="ddsForm" class="form-grid">
+      <label>Дата<input type="date" name="date" required></label>
+      <label>Канал
+        <div class="seg seg-input" data-name="channel">
+          <button type="button" data-v="Kaspi" class="on">Kaspi</button>
+          <button type="button" data-v="WB">WB</button>
+          <button type="button" data-v="Опт">Опт</button>
+          <button type="button" data-v="Общее">Общее</button>
+        </div>
+      </label>
+      <label>Вид расхода
+        <div class="seg seg-input" data-name="kind">
+          <button type="button" data-v="Переменный" class="on">Переменный</button>
+          <button type="button" data-v="Постоянный">Постоянный</button>
+        </div>
+      </label>
+      <label>Статья расхода<input name="item" list="dl-item" required autocomplete="off"></label>
+      <label>Контрагент<input name="counterparty" list="dl-counterparty" autocomplete="off"></label>
+      <label>Способ оплаты<input name="payment" list="dl-payment" autocomplete="off"></label>
+      <label>Сумма, ₸<input name="amount" type="number" step="any" min="0" required></label>
+      <label class="wide">Назначение<input name="purpose" list="dl-purpose" autocomplete="off"></label>
+      <div class="form-actions wide">
+        <button class="btn gold" type="submit" id="ddsSubmit">Сохранить</button>
+        <button class="btn ghost hidden" type="button" id="ddsCancel">Отменить правку</button>
+      </div>
+    </form>
+    <datalist id="dl-item"></datalist><datalist id="dl-counterparty"></datalist>
+    <datalist id="dl-payment"></datalist><datalist id="dl-purpose"></datalist>
+  </div>
+  <div class="toolbar">
+    <div class="seg" id="ddsChan">
+      <button data-v="all" class="on">Все</button><button data-v="Kaspi">Kaspi</button><button data-v="WB">WB</button>
+      <button data-v="Опт">Опт</button><button data-v="Общее">Общее</button><button data-v="trash">🗑 Удалённые</button>
+    </div>
+    <div class="period" data-period="dds"></div>
+    <input id="ddsSearch" class="search" placeholder="Поиск…">
+  </div>
+  <div class="kpis" id="ddsKpis"></div>
+  <div class="card"><div class="table-wrap"><table id="ddsTable"></table></div></div>
+</section>
+
+<!-- ===== ОПиУ ===== -->
+<section id="tab-pnl" class="tab">
+  <div class="toolbar">
+    <div class="period" data-period="pnl"></div>
+    <div class="seg" id="pnlSeg">
+      <button data-v="all" class="on">Kaspi: все</button><button data-v="fnix">Kaspi: FNIX</button><button data-v="other">Kaspi: общие</button>
+    </div>
+  </div>
+  <div class="kpis" id="pnlKpis"></div>
+  <div class="card"><h3>Отчёт о прибылях и убытках</h3><div class="table-wrap"><table id="pnlTable" class="pnl"></table></div>
+    <p class="hint">Расходы канала Kaspi из ДДС относятся на весь канал, даже если выбран фильтр FNIX или общие.</p></div>
+  <div class="grid2">
+    <div class="card"><h3>По месяцам</h3><div class="chart-box"><canvas id="pnlChart"></canvas></div></div>
+    <div class="card"><h3>Расходы по статьям</h3><div id="pnlItems"></div></div>
+  </div>
+</section>
+
+<!-- ===== Опт ===== -->
+<section id="tab-opt" class="tab">
+  <div class="card">
+    <h3 id="optFormTitle">Новая оптовая продажа</h3>
+    <form id="optForm" class="form-grid">
+      <label>Дата<input type="date" name="date" required></label>
+      <label>Покупатель<input name="buyer" list="dl-buyer" required autocomplete="off"></label>
+      <label>Модель<input name="model" list="dl-model" required autocomplete="off"></label>
+      <label>Количество<input name="qty" type="number" min="1" step="1" required></label>
+      <label>Сумма продажи, ₸<input name="sum" type="number" step="any" min="0" required></label>
+      <label>Примечание<input name="note" autocomplete="off"></label>
+      <div class="form-actions wide">
+        <button class="btn gold" type="submit">Сохранить</button>
+        <button class="btn ghost hidden" type="button" id="optCancel">Отменить правку</button>
+      </div>
+    </form>
+    <datalist id="dl-buyer"></datalist><datalist id="dl-model"></datalist>
+  </div>
+  <div class="toolbar"><div class="period" data-period="opt"></div></div>
+  <div class="kpis" id="optKpis"></div>
+  <div class="card"><div class="table-wrap"><table id="optTable"></table></div></div>
+</section>
+
+<!-- ===== Фуры ===== -->
+<section id="tab-trucks" class="tab">
+  <div class="card">
+    <h3 id="truckFormTitle">Новая фура</h3>
+    <form id="truckForm" class="form-grid">
+      <label>Дата<input type="date" name="date" required></label>
+      <label>Фура (номер, водитель)<input name="truck" required autocomplete="off"></label>
+      <label>№ контракта<input name="contract" autocomplete="off"></label>
+      <label>Оплата за товар, ₸<input name="goodsSum" type="number" step="any" min="0"></label>
+      <label>Статус оплаты
+        <div class="seg seg-input" data-name="payStatus">
+          <button type="button" data-v="Не оплачено" class="on">Не оплачено</button>
+          <button type="button" data-v="Частично">Частично</button>
+          <button type="button" data-v="Оплачено">Оплачено</button>
+        </div>
+      </label>
+      <label>Водителю за растаможку, ₸<input name="driver" type="number" step="any" min="0"></label>
+      <label>Китайцам на границе, ₸<input name="border" type="number" step="any" min="0"></label>
+      <label class="wide">Товары (модель — количество, по строке)<textarea name="goods" rows="3"></textarea></label>
+      <div class="wide">
+        <div class="extra-head">Доп. расходы <button type="button" class="btn ghost sm" id="extraAdd">+ добавить</button></div>
+        <div id="extraList"></div>
+      </div>
+      <label class="wide">Примечание<input name="note" autocomplete="off"></label>
+      <div class="form-actions wide">
+        <button class="btn gold" type="submit">Сохранить</button>
+        <button class="btn ghost hidden" type="button" id="truckCancel">Отменить правку</button>
+      </div>
+    </form>
+  </div>
+  <p class="hint">Расходы по фурам уже входят в себестоимость и не попадают в ДДС и ОПиУ.</p>
+  <div class="kpis" id="truckKpis"></div>
+  <div id="truckList" class="truck-list"></div>
+</section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,605 @@
+/* FNIX Ёлки — отчёт по продажам */
+(() => {
+'use strict';
+const CFG = window.CONFIG || {};
+const COMM = CFG.KASPI_COMMISSION ?? 0.12;
+const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', opt: 'Опт', trucks: 'Фуры' };
+const NUMS = ['amount', 'cost', 'sum', 'qty', 'logistics', 'goodsSum', 'driver', 'border'];
+const LS = { state: 'fnix_state', outbox: 'fnix_outbox', pin: 'fnix_pin', period: 'fnix_period' };
+const CHANNELS = ['Kaspi', 'Опт', 'WB', 'Общее'];
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = v => { const n = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; };
+const fmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₸';
+const fmtN = n => Math.round(n).toLocaleString('ru-RU');
+const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '—';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const hash = s => { let h = 5381; for (const c of String(s)) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return (h >>> 0).toString(36); };
+const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const nowIso = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 19); };
+const ruDate = d => d ? d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : '';
+const isFnix = name => /FNIX/i.test(name || '');
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
+
+/* ================= Хранилище ================= */
+let S = { dds: [], cost: [], map: [], kaspi: [], opt: [], trucks: [] };
+let outbox = lsGet(LS.outbox, []);
+let pin = lsGet(LS.pin, '');
+const remote = !!CFG.API_URL;
+let flushing = false;
+
+function normalize(key, rows) {
+  return (rows || []).map(r => {
+    const o = { ...r };
+    o.id = String(o.id);
+    NUMS.forEach(k => { if (k in o) o[k] = num(o[k]); });
+    if (o.date) o.date = String(o.date).slice(0, 10);
+    if (key === 'kaspi' && o.order !== undefined) o.order = String(o.order);
+    return o;
+  });
+}
+function persist() { lsSet(LS.state, S); lsSet(LS.outbox, outbox); }
+
+function setSync(cls, text) {
+  const el = $('#sync'); el.className = 'sync ' + cls; $('#syncText').textContent = text;
+}
+function syncStatus() {
+  if (!remote) return setSync('bad', 'Локальный режим');
+  if (outbox.length) return setSync(flushing ? 'busy' : 'bad', flushing ? 'Сохраняю в Google…' : `Нет связи · в очереди ${outbox.length}`);
+  setSync('ok', 'Сохранено в Google');
+}
+
+async function api(body) {
+  const res = await fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify({ ...body, pin }), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'error');
+  return j;
+}
+async function flush() {
+  if (!remote || flushing || !outbox.length) return syncStatus();
+  flushing = true; syncStatus();
+  try {
+    while (outbox.length) {
+      await api(outbox[0]);
+      outbox.shift(); persist(); syncStatus();
+    }
+  } catch (e) {
+    if (String(e.message) === 'pin') { lsSet(LS.pin, ''); showLogin('ПИН изменился, войдите заново'); }
+    setTimeout(flush, 15000);
+  } finally { flushing = false; syncStatus(); }
+}
+function queue(op) { outbox.push(op); persist(); flush(); }
+
+function put(key, rows, silent) {
+  const idx = new Map(S[key].map((r, i) => [r.id, i]));
+  rows.forEach(r => { if (idx.has(r.id)) S[key][idx.get(r.id)] = r; else { idx.set(r.id, S[key].length); S[key].push(r); } });
+  for (let i = 0; i < rows.length; i += 800) queue({ action: 'upsert', sheet: SHEETS[key], rows: rows.slice(i, i + 800) });
+  persist(); if (!silent) render();
+}
+function del(key, ids) {
+  const set = new Set(ids);
+  if (key === 'dds') S.dds.forEach(r => { if (set.has(r.id)) r.deleted = nowIso(); });
+  else S[key] = S[key].filter(r => !set.has(r.id));
+  for (let i = 0; i < ids.length; i += 2000) queue({ action: 'delete', sheet: SHEETS[key], ids: ids.slice(i, i + 2000) });
+  persist(); render();
+}
+
+async function loadRemote() {
+  setSync('busy', 'Загрузка…');
+  await flush();
+  if (outbox.length) return;
+  const res = await fetch(CFG.API_URL + '?pin=' + encodeURIComponent(pin));
+  const j = await res.json();
+  if (!j.ok) { if (j.error === 'pin') { lsSet(LS.pin, ''); showLogin('Неверный ПИН'); return false; } throw new Error(j.error); }
+  Object.entries(SHEETS).forEach(([k, name]) => { S[k] = normalize(k, j.data[name]); });
+  persist(); syncStatus(); render();
+  return true;
+}
+
+/* ================= Утилиты ================= */
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+function segVal(el) { return $('button.on', el)?.dataset.v; }
+function setSeg(el, v) { $$('button', el).forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+$$('.seg').forEach(el => el.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  setSeg(el, b.dataset.v); if (!el.classList.contains('seg-input')) render();
+}));
+
+// периоды
+const periods = lsGet(LS.period, {});
+function monthRange(off) { const d = new Date(); const a = new Date(d.getFullYear(), d.getMonth() + off, 1); const b = new Date(d.getFullYear(), d.getMonth() + off + 1, 0);
+  const f = x => new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); return { from: f(a), to: f(b) }; }
+$$('.period').forEach(el => {
+  const k = el.dataset.period; periods[k] = periods[k] || { from: '', to: '' };
+  el.innerHTML = `<input type="date" data-f="from"><span style="color:var(--muted)">—</span><input type="date" data-f="to">
+    <button class="btn ghost sm" data-p="0">Этот месяц</button><button class="btn ghost sm" data-p="-1">Прошлый</button><button class="btn ghost sm" data-p="all">Всё время</button>`;
+  const sync = () => { $('[data-f=from]', el).value = periods[k].from; $('[data-f=to]', el).value = periods[k].to; };
+  sync();
+  el.addEventListener('change', e => { periods[k][e.target.dataset.f] = e.target.value; lsSet(LS.period, periods); render(); });
+  el.addEventListener('click', e => { const p = e.target.dataset.p; if (p === undefined) return;
+    periods[k] = p === 'all' ? { from: '', to: '' } : monthRange(+p); sync(); lsSet(LS.period, periods); render(); });
+});
+const inP = (d, k) => { const p = periods[k]; return (!p.from || d >= p.from) && (!p.to || d <= p.to); };
+
+/* ================= Справочники ================= */
+function mapIndex() { const m = new Map(); S.map.forEach(r => { if (r.name) m.set(r.kaspi, r.name); }); return m; }
+function costIndex() { const m = new Map(); S.cost.forEach(r => m.set(String(r.name).trim().toLowerCase(), num(r.cost))); return m; }
+function costOf(ci, name) { return name ? ci.get(String(name).trim().toLowerCase()) : undefined; }
+
+function kaspiCalc(periodKey, seg) {
+  const mi = mapIndex(), ci = costIndex();
+  const out = { rev: 0, comm: 0, log: 0, cogs: 0, qty: 0, orders: 0, cancel: 0, ret: 0, noCost: 0, rows: [] };
+  S.kaspi.forEach(r => {
+    if (!inP(r.date, periodKey)) return;
+    const fn = isFnix(r.kaspi);
+    if (seg === 'fnix' && !fn) return;
+    if (seg === 'other' && fn) return;
+    if (r.status === 'Отменен') { out.cancel++; return; }
+    if (r.status === 'Возврат') { out.ret++; return; }
+    if (r.status !== 'Выдан') return;
+    const name = mi.get(r.kaspi);
+    const unit = costOf(ci, name);
+    const x = { ...r, fnix: fn, name, unit, comm: r.sum * COMM, cogs: (unit || 0) * r.qty };
+    x.profit = r.sum - x.comm - r.logistics - x.cogs;
+    if (unit === undefined) out.noCost += r.qty;
+    out.rev += r.sum; out.comm += x.comm; out.log += r.logistics; out.cogs += x.cogs; out.qty += r.qty; out.orders++;
+    out.rows.push(x);
+  });
+  out.profit = out.rev - out.comm - out.log - out.cogs;
+  return out;
+}
+function optCalc(periodKey) {
+  const ci = costIndex();
+  const rows = S.opt.filter(r => inP(r.date, periodKey)).map(r => { const unit = costOf(ci, r.model); return { ...r, unit, cogs: (unit || 0) * r.qty, profit: r.sum - (unit || 0) * r.qty }; });
+  return { rows, rev: sum(rows, 'sum'), cogs: sum(rows, 'cogs'), qty: sum(rows, 'qty'), profit: sum(rows, 'profit'), noCost: rows.filter(r => r.unit === undefined).length };
+}
+const sum = (a, k) => a.reduce((s, r) => s + num(typeof k === 'function' ? k(r) : r[k]), 0);
+const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+const sign = n => `<span class="${n < 0 ? 'neg' : 'pos'}">${fmt(n)}</span>`;
+
+/* ================= Графики ================= */
+const charts = {};
+function chart(id, cfg) {
+  if (typeof Chart === 'undefined') return;
+  if (charts[id]) charts[id].destroy();
+  Chart.defaults.color = '#9fb3c4'; Chart.defaults.font.family = 'Manrope';
+  Chart.defaults.borderColor = 'rgba(255,255,255,.06)';
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+const chartOpts = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+  plugins: { legend: { labels: { boxWidth: 10, boxHeight: 10 } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.raw)}` } } },
+  scales: { y: { ticks: { callback: v => (v / 1000).toLocaleString('ru-RU') + 'k' } }, x: { grid: { display: false } } } };
+
+/* ================= Kaspi ================= */
+let lastHints = {};
+$('#kaspiFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+    const h = aoa[0].map(x => String(x).trim());
+    const col = n => h.indexOf(n);
+    const c = { order: col('№ заказа'), date: col('Дата поступления заказа'), kaspi: col('Название товара в Kaspi Магазине'),
+      seller: col('Название в системе продавца'), sku: col('Артикул'), sum: col('Сумма'), cat: col('Категория'), city: col('Адрес самовывоза/доставки'),
+      status: col('Статус'), qty: col('Количество'), log: col('Стоимость доставки для продавца') };
+    if (c.log < 0) c.log = 23; // столбец X
+    if (c.order < 0 || c.kaspi < 0 || c.sum < 0) throw new Error('Не похоже на архив заказов Kaspi');
+    const rows = [];
+    aoa.slice(1).forEach(r => {
+      if (!r[c.order]) return;
+      if (c.cat >= 0 && CFG.TREE_CATEGORY && String(r[c.cat]).trim() !== CFG.TREE_CATEGORY) return;
+      const d = String(r[c.date]).trim(); const m = d.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+      const kaspi = String(r[c.kaspi]).trim();
+      if (c.seller >= 0 && r[c.seller]) lastHints[kaspi] = String(r[c.seller]).trim();
+      rows.push({ id: String(r[c.order]) + '_' + String(r[c.sku] || ''), order: String(r[c.order]), date: m ? `${m[3]}-${m[2]}-${m[1]}` : d.slice(0, 10),
+        kaspi, sku: String(r[c.sku] || ''), sum: num(r[c.sum]), qty: num(r[c.qty]) || 1, status: String(r[c.status]).trim(),
+        logistics: num(r[c.log]), city: String(r[c.city] || '').replace(/^г\.\s*/, '') });
+    });
+    if (!rows.length) throw new Error('В файле нет заказов категории «' + CFG.TREE_CATEGORY + '»');
+    put('kaspi', rows);
+    toast(`Загружено заказов ёлок: ${rows.length}`);
+  } catch (err) { toast('Ошибка: ' + err.message); }
+});
+
+function unmappedNames() {
+  const mi = mapIndex();
+  return [...new Set(S.kaspi.map(r => r.kaspi))].filter(n => !mi.has(n));
+}
+$('#tplBtn').addEventListener('click', downloadTemplate);
+function downloadTemplate() {
+  const mi = mapIndex();
+  const names = [...new Set(S.kaspi.map(r => r.kaspi))].sort((a, b) => (mi.has(a) - mi.has(b)) || a.localeCompare(b, 'ru'));
+  if (!names.length) return toast('Сначала загрузите архив Kaspi');
+  const aoa = [['Название в Kaspi', 'Тип карточки', 'Подсказка: название в системе продавца', 'Наше наименование (заполнить)']];
+  names.forEach(n => aoa.push([n, isFnix(n) ? 'FNIX (закрытая)' : 'Общая', lastHints[n] || '', mi.get(n) || '']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 60 }, { wch: 16 }, { wch: 50 }, { wch: 40 }];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Сопоставление');
+  XLSX.writeFile(wb, 'Шаблон сопоставления Kaspi.xlsx');
+}
+$('#tplFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+    const h = aoa[0].map(x => String(x).trim());
+    const ck = h.indexOf('Название в Kaspi'), cn = h.findIndex(x => x.startsWith('Наше наименование'));
+    if (ck < 0 || cn < 0) throw new Error('Нужны столбцы «Название в Kaspi» и «Наше наименование»');
+    const rows = aoa.slice(1).filter(r => String(r[ck]).trim() && String(r[cn]).trim()).map(r => {
+      const k = String(r[ck]).trim();
+      return { id: 'm_' + hash(k), kaspi: k, name: String(r[cn]).trim(), type: isFnix(k) ? 'FNIX' : 'Общая' };
+    });
+    if (!rows.length) throw new Error('Не заполнено ни одного наименования');
+    put('map', rows);
+    toast(`Сопоставлено карточек: ${rows.length}`);
+  } catch (err) { toast('Ошибка: ' + err.message); }
+});
+$('#kaspiClear').addEventListener('click', () => {
+  if (!S.kaspi.length) return;
+  if (!confirm(`Удалить из системы весь архив Kaspi (${S.kaspi.length} строк)? ДДС, себестоимость и сопоставления останутся.`)) return;
+  del('kaspi', S.kaspi.map(r => r.id)); toast('Архив очищен');
+});
+$('#mapAlert').addEventListener('click', e => { if (e.target.closest('[data-tpl]')) downloadTemplate(); });
+
+function renderKaspi() {
+  const seg = segVal($('#kaspiSeg'));
+  const k = kaspiCalc('kaspi', seg);
+  const um = unmappedNames();
+  const al = $('#mapAlert');
+  if (um.length) { al.classList.remove('hidden'); al.innerHTML = `<span>⚠️ ${um.length} карточек Kaspi без нашего наименования — их себестоимость не посчитается.</span><button class="btn gold sm" data-tpl>Скачать шаблон</button>`; }
+  else al.classList.add('hidden');
+
+  $('#kaspiKpis').innerHTML =
+    kpi('Выручка', fmt(k.rev), `${fmtN(k.qty)} шт · ${fmtN(k.orders)} заказов`) +
+    kpi('Kaspi 12%', fmt(k.comm)) +
+    kpi('Логистика', fmt(k.log)) +
+    kpi('Себестоимость', fmt(k.cogs), k.noCost ? `<span class="neg">без себестоимости: ${fmtN(k.noCost)} шт</span>` : '') +
+    kpi('Прибыль', sign(k.profit), 'маржа ' + pct(k.profit, k.rev), 'hl') +
+    kpi('Отмены / возвраты', `${fmtN(k.cancel)} / ${fmtN(k.ret)}`);
+
+  // по дням
+  const days = {};
+  k.rows.forEach(r => { const d = days[r.date] ||= { rev: 0, profit: 0 }; d.rev += r.sum; d.profit += r.profit; });
+  const dk = Object.keys(days).sort();
+  chart('kaspiChart', { type: 'bar', data: { labels: dk.map(d => d.slice(8, 10) + '.' + d.slice(5, 7)), datasets: [
+    { label: 'Выручка', data: dk.map(d => days[d].rev), backgroundColor: 'rgba(232,194,107,.55)', borderRadius: 4, order: 2 },
+    { label: 'Прибыль', data: dk.map(d => days[d].profit), type: 'line', borderColor: '#4cc28a', backgroundColor: '#4cc28a', pointRadius: 0, tension: .3, order: 1 }] }, options: chartOpts });
+
+  const f = kaspiCalc('kaspi', 'fnix'), o = kaspiCalc('kaspi', 'other');
+  $('#kaspiSplit').innerHTML = `<div class="split">
+    <div></div><div class="h n"><span class="tag fnix">FNIX</span></div><div class="h n"><span class="tag">Общие</span></div>
+    <div class="h">Выручка</div><div class="n">${fmt(f.rev)}</div><div class="n">${fmt(o.rev)}</div>
+    <div class="h">Продано, шт</div><div class="n">${fmtN(f.qty)}</div><div class="n">${fmtN(o.qty)}</div>
+    <div class="h">Kaspi + логистика</div><div class="n">${fmt(f.comm + f.log)}</div><div class="n">${fmt(o.comm + o.log)}</div>
+    <div class="h">Себестоимость</div><div class="n">${fmt(f.cogs)}</div><div class="n">${fmt(o.cogs)}</div>
+    <div class="h">Прибыль</div><div class="n">${sign(f.profit)}</div><div class="n">${sign(o.profit)}</div>
+    <div class="h">Маржа</div><div class="n">${pct(f.profit, f.rev)}</div><div class="n">${pct(o.profit, o.rev)}</div>
+    <div class="h">Доля выручки</div><div class="n">${pct(f.rev, f.rev + o.rev)}</div><div class="n">${pct(o.rev, f.rev + o.rev)}</div></div>`;
+
+  // по товарам
+  const g = {};
+  k.rows.forEach(r => {
+    const key = r.name || r.kaspi;
+    const x = g[key] ||= { name: key, mapped: !!r.name, fnix: r.fnix, unit: r.unit, qty: 0, rev: 0, comm: 0, log: 0, cogs: 0, profit: 0 };
+    x.qty += r.qty; x.rev += r.sum; x.comm += r.comm; x.log += r.logistics; x.cogs += r.cogs; x.profit += r.profit;
+  });
+  const list = Object.values(g).sort((a, b) => b.rev - a.rev);
+  $('#kaspiTable').innerHTML = list.length ? `<thead><tr><th>Наименование</th><th>Тип</th><th class="n">Шт</th><th class="n">Выручка</th><th class="n">Kaspi 12%</th><th class="n">Логистика</th><th class="n">Себест. ед.</th><th class="n">Себестоимость</th><th class="n">Прибыль</th><th class="n">Маржа</th></tr></thead><tbody>` +
+    list.map(x => `<tr><td>${esc(x.name)} ${x.mapped ? '' : '<span class="tag warn">нет сопоставления</span>'}</td>
+      <td><span class="tag ${x.fnix ? 'fnix' : ''}">${x.fnix ? 'FNIX' : 'Общая'}</span></td>
+      <td class="n">${fmtN(x.qty)}</td><td class="n">${fmt(x.rev)}</td><td class="n">${fmt(x.comm)}</td><td class="n">${fmt(x.log)}</td>
+      <td class="n">${x.unit === undefined ? '<span class="tag warn">нет</span>' : fmt(x.unit)}</td><td class="n">${fmt(x.cogs)}</td>
+      <td class="n">${sign(x.profit)}</td><td class="n">${pct(x.profit, x.rev)}</td></tr>`).join('') + '</tbody>'
+    : `<tr><td class="empty">Загрузите архив заказов Kaspi (.xlsx)</td></tr>`;
+}
+
+/* ================= Себестоимость ================= */
+function costNames() {
+  const ci = new Map(S.cost.map(r => [String(r.name).trim().toLowerCase(), r]));
+  const names = new Map();
+  S.cost.forEach(r => names.set(String(r.name).trim().toLowerCase(), { name: r.name, row: r }));
+  S.map.forEach(r => { if (r.name) { const k = r.name.trim().toLowerCase(); if (!names.has(k)) names.set(k, { name: r.name, row: ci.get(k) }); } });
+  S.opt.forEach(r => { if (r.model) { const k = r.model.trim().toLowerCase(); if (!names.has(k)) names.set(k, { name: r.model, row: ci.get(k) }); } });
+  return [...names.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
+}
+function renderCost() {
+  const mi = mapIndex();
+  const usage = {};
+  S.kaspi.forEach(r => { if (r.status === 'Выдан') { const n = (mi.get(r.kaspi) || '').toLowerCase(); if (n) usage[n] = (usage[n] || 0) + r.qty; } });
+  const list = costNames();
+  $('#costTable').innerHTML = list.length ? `<thead><tr><th>Наименование</th><th class="n">Себестоимость, ₸</th><th class="n">Продано на Kaspi, шт</th><th></th></tr></thead><tbody>` +
+    list.map(x => `<tr><td>${esc(x.name)} ${x.row ? '' : '<span class="tag warn">не указана</span>'}</td>
+      <td class="n"><input class="cost-input" type="number" step="any" data-name="${esc(x.name)}" value="${x.row ? x.row.cost : ''}" placeholder="0"></td>
+      <td class="n">${fmtN(usage[String(x.name).trim().toLowerCase()] || 0)}</td>
+      <td class="n">${x.row ? `<button class="icon-btn" title="Удалить цену" data-del-cost="${esc(x.row.id)}">🗑</button>` : ''}</td></tr>`).join('') + '</tbody>'
+    : `<tr><td class="empty">Наименования появятся после сопоставления карточек Kaspi или добавьте вручную</td></tr>`;
+}
+$('#costTable').addEventListener('change', e => {
+  const i = e.target.closest('.cost-input'); if (!i || i.value === '') return;
+  const name = i.dataset.name, k = name.trim().toLowerCase();
+  const ex = S.cost.find(r => String(r.name).trim().toLowerCase() === k);
+  put('cost', [{ id: ex ? ex.id : 'c_' + hash(k), name, cost: num(i.value), updated: nowIso() }], true);
+  i.closest('tr').querySelector('.tag.warn')?.remove();
+  toast('Себестоимость сохранена');
+});
+$('#costTable').addEventListener('click', e => {
+  const b = e.target.closest('[data-del-cost]'); if (!b) return;
+  if (confirm('Удалить себестоимость этого товара?')) del('cost', [b.dataset.delCost]);
+});
+$('#costAdd').addEventListener('submit', e => {
+  e.preventDefault(); const f = e.target; const name = f.name.value.trim(); if (!name) return;
+  const k = name.toLowerCase(); const ex = S.cost.find(r => String(r.name).trim().toLowerCase() === k);
+  put('cost', [{ id: ex ? ex.id : 'c_' + hash(k), name, cost: num(f.cost.value), updated: nowIso() }]);
+  f.reset(); toast('Добавлено');
+});
+
+/* ================= ДДС ================= */
+const ddsForm = $('#ddsForm');
+function ddsReset() {
+  ddsForm.reset(); delete ddsForm.dataset.id; ddsForm.date.value = today();
+  $('#ddsFormTitle').textContent = 'Новый расход'; $('#ddsCancel').classList.add('hidden');
+}
+ddsReset();
+$('#ddsCancel').addEventListener('click', ddsReset);
+ddsForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const id = ddsForm.dataset.id;
+  const prev = id ? S.dds.find(r => r.id === id) : null;
+  const row = { id: id || uid(), date: ddsForm.date.value, channel: segVal($('[data-name=channel]', ddsForm)), kind: segVal($('[data-name=kind]', ddsForm)),
+    item: ddsForm.item.value.trim(), counterparty: ddsForm.counterparty.value.trim(), payment: ddsForm.payment.value.trim(),
+    amount: num(ddsForm.amount.value), purpose: ddsForm.purpose.value.trim(), created: prev ? prev.created : nowIso(), updated: nowIso(), deleted: prev ? prev.deleted : '' };
+  put('dds', [row]); toast(id ? 'Расход изменён' : 'Расход сохранён');
+  const keep = { channel: row.channel, kind: row.kind, date: row.date };
+  ddsReset(); ddsForm.date.value = keep.date;
+  setSeg($('[data-name=channel]', ddsForm), keep.channel); setSeg($('[data-name=kind]', ddsForm), keep.kind);
+  ddsForm.item.focus();
+});
+// автозаполнение: по знакомой статье подставляем вид, контрагента и способ оплаты
+ddsForm.item.addEventListener('change', () => {
+  if (ddsForm.dataset.id) return;
+  const v = ddsForm.item.value.trim().toLowerCase();
+  const last = [...S.dds].reverse().find(r => !r.deleted && String(r.item).toLowerCase() === v);
+  if (!last) return;
+  setSeg($('[data-name=kind]', ddsForm), last.kind);
+  if (!ddsForm.counterparty.value) ddsForm.counterparty.value = last.counterparty || '';
+  if (!ddsForm.payment.value) ddsForm.payment.value = last.payment || '';
+});
+function fillDatalists() {
+  const freq = (rows, k, extra = []) => {
+    const c = {}; extra.forEach(x => c[x] = 0);
+    rows.forEach(r => { const v = String(r[k] || '').trim(); if (v) c[v] = (c[v] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => c[b] - c[a]);
+  };
+  const live = S.dds.filter(r => !r.deleted);
+  const set = (id, list) => { $('#' + id).innerHTML = list.map(v => `<option value="${esc(v)}">`).join(''); };
+  set('dl-item', freq(live, 'item')); set('dl-counterparty', freq(live, 'counterparty'));
+  set('dl-payment', freq(live, 'payment', ['Kaspi Bank', 'Halyk Bank', 'Наличные']));
+  set('dl-purpose', freq(live, 'purpose'));
+  set('dl-buyer', freq(S.opt, 'buyer'));
+  set('dl-model', costNames().map(x => x.name));
+}
+$('#ddsSearch').addEventListener('input', () => renderDds());
+$('#ddsTable').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const r = S.dds.find(x => x.id === b.dataset.id); if (!r) return;
+  if (b.dataset.act === 'edit') {
+    ddsForm.dataset.id = r.id; ddsForm.date.value = r.date; setSeg($('[data-name=channel]', ddsForm), r.channel); setSeg($('[data-name=kind]', ddsForm), r.kind);
+    ddsForm.item.value = r.item; ddsForm.counterparty.value = r.counterparty; ddsForm.payment.value = r.payment; ddsForm.amount.value = r.amount; ddsForm.purpose.value = r.purpose;
+    $('#ddsFormTitle').textContent = 'Правка расхода'; $('#ddsCancel').classList.remove('hidden'); ddsForm.scrollIntoView({ behavior: 'smooth' });
+  } else if (b.dataset.act === 'del') {
+    if (confirm(`Удалить расход «${r.item}» на ${fmt(r.amount)}? Он останется в «Удалённых» и в Google Таблице.`)) { del('dds', [r.id]); toast('Перемещено в удалённые'); }
+  } else if (b.dataset.act === 'restore') {
+    put('dds', [{ ...r, deleted: '' }]); toast('Восстановлено');
+  }
+});
+function ddsInPeriod(k) { return S.dds.filter(r => !r.deleted && inP(r.date, k)); }
+function renderDds() {
+  const ch = segVal($('#ddsChan')), q = $('#ddsSearch').value.trim().toLowerCase();
+  const trash = ch === 'trash';
+  let rows = S.dds.filter(r => (trash ? !!r.deleted : !r.deleted) && inP(r.date, 'dds'));
+  if (!trash && ch !== 'all') rows = rows.filter(r => r.channel === ch);
+  if (q) rows = rows.filter(r => [r.item, r.counterparty, r.payment, r.purpose, r.channel].join(' ').toLowerCase().includes(q));
+  rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.created).localeCompare(String(a.created)));
+  const base = ddsInPeriod('dds');
+  const byCh = c => sum(base.filter(r => r.channel === c), 'amount');
+  $('#ddsKpis').innerHTML = kpi('Всего расходов', fmt(sum(base, 'amount')), `${base.length} записей`, 'hl') +
+    CHANNELS.map(c => kpi(c, fmt(byCh(c)))).join('') +
+    kpi('Постоянные / переменные', `${fmtN(sum(base.filter(r => r.kind === 'Постоянный'), 'amount'))} / ${fmtN(sum(base.filter(r => r.kind !== 'Постоянный'), 'amount'))}`);
+  $('#ddsTable').innerHTML = rows.length ? `<thead><tr><th>Дата</th><th>Канал</th><th>Вид</th><th>Статья</th><th>Контрагент</th><th>Оплата</th><th>Назначение</th><th class="n">Сумма</th><th></th></tr></thead><tbody>` +
+    rows.map(r => `<tr class="${trash ? 'del' : ''}"><td>${ruDate(r.date)}</td><td><span class="tag">${esc(r.channel)}</span></td><td>${esc(r.kind)}</td>
+      <td>${esc(r.item)}</td><td>${esc(r.counterparty)}</td><td>${esc(r.payment)}</td><td>${esc(r.purpose)}</td><td class="n">${fmt(r.amount)}</td>
+      <td class="n" style="text-decoration:none;opacity:1">${trash ? `<button class="icon-btn" data-act="restore" data-id="${esc(r.id)}" title="Восстановить">↺</button>`
+        : `<button class="icon-btn" data-act="edit" data-id="${esc(r.id)}" title="Изменить">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}" title="Удалить">🗑</button>`}</td></tr>`).join('') +
+    `<tr><td colspan="7"><b>Итого</b></td><td class="n"><b>${fmt(sum(rows, 'amount'))}</b></td><td></td></tr></tbody>`
+    : `<tr><td class="empty">${trash ? 'Удалённых записей нет' : 'Расходов за период нет'}</td></tr>`;
+}
+
+/* ================= ОПиУ ================= */
+function pnlFor(periodKey, seg) {
+  const k = kaspiCalc(periodKey, seg), o = optCalc(periodKey), d = ddsInPeriod(periodKey);
+  const exp = (ch, kind) => sum(d.filter(r => r.channel === ch && (kind === 'Постоянный' ? r.kind === 'Постоянный' : r.kind !== 'Постоянный')), 'amount');
+  const col = {
+    Kaspi: { rev: k.rev, comm: k.comm, log: k.log, cogs: k.cogs },
+    'Опт': { rev: o.rev, comm: 0, log: 0, cogs: o.cogs },
+    WB: { rev: 0, comm: 0, log: 0, cogs: 0 },
+    'Общее': { rev: 0, comm: 0, log: 0, cogs: 0 }
+  };
+  CHANNELS.forEach(c => { const x = col[c]; x.gross = x.rev - x.comm - x.log - x.cogs; x.vari = exp(c, 'Переменный'); x.fixed = exp(c, 'Постоянный'); x.net = x.gross - x.vari - x.fixed; });
+  const tot = {}; ['rev', 'comm', 'log', 'cogs', 'gross', 'vari', 'fixed', 'net'].forEach(f => tot[f] = CHANNELS.reduce((s, c) => s + col[c][f], 0));
+  col['Итого'] = tot;
+  return { col, k, o, d };
+}
+function renderPnl() {
+  const seg = segVal($('#pnlSeg'));
+  const { col, k, d } = pnlFor('pnl', seg);
+  const t = col['Итого'];
+  $('#pnlKpis').innerHTML = kpi('Выручка', fmt(t.rev)) + kpi('Валовая прибыль', sign(t.gross), 'маржа ' + pct(t.gross, t.rev)) +
+    kpi('Расходы ДДС', fmt(t.vari + t.fixed)) + kpi('Чистая прибыль', sign(t.net), 'рентабельность ' + pct(t.net, t.rev), 'hl');
+  const cols = [...CHANNELS, 'Итого'];
+  const line = (label, f, cls = '', neg = false) => `<tr class="${cls}"><td>${label}</td>${cols.map(c => `<td class="n">${cls === 'sum' ? sign(col[c][f]) : (col[c][f] ? (neg ? '−' : '') + fmt(col[c][f]) : '—')}</td>`).join('')}</tr>`;
+  const pline = (label, f) => `<tr class="sub"><td>${label}</td>${cols.map(c => `<td class="n">${pct(col[c][f], col[c].rev)}</td>`).join('')}</tr>`;
+  $('#pnlTable').innerHTML = `<thead><tr><th>Статья</th>${cols.map(c => `<th class="n">${c}</th>`).join('')}</tr></thead><tbody>` +
+    line('Выручка', 'rev') + line('Комиссия Kaspi 12%', 'comm', 'sub', true) + line('Логистика Kaspi', 'log', 'sub', true) + line('Себестоимость', 'cogs', 'sub', true) +
+    line('Валовая прибыль', 'gross', 'sum') + pline('Валовая маржа', 'gross') +
+    line('Переменные расходы', 'vari', 'sub', true) + line('Постоянные расходы', 'fixed', 'sub', true) +
+    line('Чистая прибыль', 'net', 'sum') + pline('Рентабельность', 'net') + '</tbody>';
+  const warn = [];
+  if (k.noCost) warn.push(`${fmtN(k.noCost)} шт на Kaspi без себестоимости`);
+  // по месяцам
+  const months = new Set();
+  S.kaspi.forEach(r => inP(r.date, 'pnl') && months.add(r.date.slice(0, 7)));
+  S.opt.forEach(r => inP(r.date, 'pnl') && months.add(r.date.slice(0, 7)));
+  d.forEach(r => months.add(r.date.slice(0, 7)));
+  const ms = [...months].sort();
+  const saved = periods.pnl;
+  const series = ms.map(m => {
+    const [y, mo] = m.split('-').map(Number); const last = new Date(y, mo, 0).getDate();
+    let from = m + '-01', to = m + '-' + String(last).padStart(2, '0');
+    if (saved.from && saved.from > from) from = saved.from; if (saved.to && saved.to < to) to = saved.to;
+    periods._m = { from, to }; const c = pnlFor('_m', seg).col['Итого']; return { m, rev: c.rev, net: c.net };
+  });
+  const mn = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  chart('pnlChart', { type: 'bar', data: { labels: series.map(s => mn[+s.m.slice(5) - 1] + ' ' + s.m.slice(2, 4)), datasets: [
+    { label: 'Выручка', data: series.map(s => s.rev), backgroundColor: 'rgba(232,194,107,.55)', borderRadius: 4 },
+    { label: 'Чистая прибыль', data: series.map(s => s.net), backgroundColor: series.map(s => s.net < 0 ? 'rgba(224,90,82,.7)' : 'rgba(76,194,138,.7)'), borderRadius: 4 }] }, options: chartOpts });
+  const items = {}; d.forEach(r => items[r.item] = (items[r.item] || 0) + r.amount);
+  const il = Object.entries(items).sort((a, b) => b[1] - a[1]); const max = il[0]?.[1] || 1;
+  $('#pnlItems').innerHTML = (warn.length ? `<p class="hint neg">⚠️ ${warn.join(', ')}</p>` : '') + (il.length ? il.slice(0, 12).map(([n, v]) =>
+    `<div class="bar-row"><span>${esc(n)}</span><span class="n">${fmt(v)}</span><div class="bar"><i style="width:${v / max * 100}%"></i></div></div>`).join('') : '<div class="empty">Расходов за период нет</div>');
+}
+
+/* ================= Опт ================= */
+const optForm = $('#optForm');
+function optReset() { optForm.reset(); delete optForm.dataset.id; optForm.date.value = today(); $('#optFormTitle').textContent = 'Новая оптовая продажа'; $('#optCancel').classList.add('hidden'); }
+optReset();
+$('#optCancel').addEventListener('click', optReset);
+optForm.addEventListener('submit', e => {
+  e.preventDefault(); const id = optForm.dataset.id; const prev = id ? S.opt.find(r => r.id === id) : null;
+  put('opt', [{ id: id || uid(), date: optForm.date.value, buyer: optForm.buyer.value.trim(), model: optForm.model.value.trim(), qty: num(optForm.qty.value),
+    sum: num(optForm.sum.value), note: optForm.note.value.trim(), created: prev ? prev.created : nowIso() }]);
+  toast(id ? 'Продажа изменена' : 'Продажа сохранена'); optReset();
+});
+$('#optTable').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return; const r = S.opt.find(x => x.id === b.dataset.id); if (!r) return;
+  if (b.dataset.act === 'edit') {
+    optForm.dataset.id = r.id; ['date', 'buyer', 'model', 'qty', 'sum', 'note'].forEach(k => optForm[k].value = r[k] ?? '');
+    $('#optFormTitle').textContent = 'Правка продажи'; $('#optCancel').classList.remove('hidden'); optForm.scrollIntoView({ behavior: 'smooth' });
+  } else if (confirm(`Удалить продажу ${r.buyer} — ${r.model}?`)) del('opt', [r.id]);
+});
+function renderOpt() {
+  const o = optCalc('opt');
+  $('#optKpis').innerHTML = kpi('Выручка опт', fmt(o.rev), `${fmtN(o.qty)} шт`) + kpi('Себестоимость', fmt(o.cogs), o.noCost ? `<span class="neg">без себестоимости: ${o.noCost}</span>` : '') +
+    kpi('Валовая прибыль', sign(o.profit), 'маржа ' + pct(o.profit, o.rev), 'hl') + kpi('Покупателей', fmtN(new Set(o.rows.map(r => r.buyer)).size));
+  const rows = o.rows.sort((a, b) => b.date.localeCompare(a.date));
+  $('#optTable').innerHTML = rows.length ? `<thead><tr><th>Дата</th><th>Покупатель</th><th>Модель</th><th class="n">Шт</th><th class="n">Сумма</th><th class="n">Себестоимость</th><th class="n">Прибыль</th><th>Примечание</th><th></th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td>${ruDate(r.date)}</td><td>${esc(r.buyer)}</td><td>${esc(r.model)}</td><td class="n">${fmtN(r.qty)}</td><td class="n">${fmt(r.sum)}</td>
+      <td class="n">${r.unit === undefined ? '<span class="tag warn">нет</span>' : fmt(r.cogs)}</td><td class="n">${sign(r.profit)}</td><td>${esc(r.note)}</td>
+      <td class="n"><button class="icon-btn" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}">🗑</button></td></tr>`).join('') + '</tbody>'
+    : `<tr><td class="empty">Оптовых продаж за период нет</td></tr>`;
+}
+
+/* ================= Фуры ================= */
+const truckForm = $('#truckForm');
+function extraRow(n = '', v = '') {
+  const d = document.createElement('div'); d.className = 'extra-row';
+  d.innerHTML = `<input placeholder="Статья" value="${esc(n)}"><input type="number" step="any" placeholder="Сумма, ₸" value="${esc(v)}"><button type="button" class="icon-btn">✕</button>`;
+  d.querySelector('button').onclick = () => d.remove(); $('#extraList').appendChild(d);
+}
+$('#extraAdd').addEventListener('click', () => extraRow());
+function truckReset() { truckForm.reset(); delete truckForm.dataset.id; truckForm.date.value = today(); $('#extraList').innerHTML = ''; setSeg($('[data-name=payStatus]', truckForm), 'Не оплачено');
+  $('#truckFormTitle').textContent = 'Новая фура'; $('#truckCancel').classList.add('hidden'); }
+truckReset();
+$('#truckCancel').addEventListener('click', truckReset);
+const extras = r => { try { return Array.isArray(r.extra) ? r.extra : JSON.parse(r.extra || '[]'); } catch { return []; } };
+truckForm.addEventListener('submit', e => {
+  e.preventDefault(); const id = truckForm.dataset.id;
+  const extra = $$('.extra-row', truckForm).map(d => { const [a, b] = $$('input', d); return { name: a.value.trim(), amount: num(b.value) }; }).filter(x => x.name || x.amount);
+  put('trucks', [{ id: id || uid(), date: truckForm.date.value, truck: truckForm.truck.value.trim(), contract: truckForm.contract.value.trim(), goods: truckForm.goods.value.trim(),
+    goodsSum: num(truckForm.goodsSum.value), payStatus: segVal($('[data-name=payStatus]', truckForm)), driver: num(truckForm.driver.value), border: num(truckForm.border.value),
+    extra: JSON.stringify(extra), note: truckForm.note.value.trim() }]);
+  toast(id ? 'Фура изменена' : 'Фура сохранена'); truckReset();
+});
+$('#truckList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return; const r = S.trucks.find(x => x.id === b.dataset.id); if (!r) return;
+  if (b.dataset.act === 'edit') {
+    truckReset(); truckForm.dataset.id = r.id;
+    ['date', 'truck', 'contract', 'goods', 'goodsSum', 'driver', 'border', 'note'].forEach(k => truckForm[k].value = r[k] || '');
+    setSeg($('[data-name=payStatus]', truckForm), r.payStatus || 'Не оплачено'); extras(r).forEach(x => extraRow(x.name, x.amount));
+    $('#truckFormTitle').textContent = 'Правка фуры'; $('#truckCancel').classList.remove('hidden'); truckForm.scrollIntoView({ behavior: 'smooth' });
+  } else if (confirm(`Удалить фуру «${r.truck}»?`)) del('trucks', [r.id]);
+});
+function renderTrucks() {
+  const list = [...S.trucks].sort((a, b) => b.date.localeCompare(a.date));
+  const ex = r => sum(extras(r), 'amount');
+  const tot = r => r.goodsSum + r.driver + r.border + ex(r);
+  $('#truckKpis').innerHTML = kpi('Фур', fmtN(list.length), `не оплачено: ${list.filter(r => r.payStatus !== 'Оплачено').length}`) +
+    kpi('Оплата за товар', fmt(sum(list, 'goodsSum'))) + kpi('Растаможка (водителю)', fmt(sum(list, 'driver'))) +
+    kpi('Китайцам на границе', fmt(sum(list, 'border'))) + kpi('Доп. расходы', fmt(sum(list, ex))) + kpi('Итого по фурам', fmt(sum(list, tot)), '', 'hl');
+  $('#truckList').innerHTML = list.length ? list.map(r => {
+    const st = r.payStatus === 'Оплачено' ? 'paid' : r.payStatus === 'Частично' ? 'part' : 'warn';
+    return `<div class="truck"><div class="t-head"><div><div class="t-name">🚛 ${esc(r.truck)}</div><div class="t-meta">${ruDate(r.date)}${r.contract ? ' · контракт ' + esc(r.contract) : ''}</div></div>
+      <div><span class="tag ${st}">${esc(r.payStatus || 'Не оплачено')}</span>
+      <button class="icon-btn" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}">🗑</button></div></div>
+      ${r.goods ? `<div class="goods">${esc(r.goods)}</div>` : ''}
+      <dl><dt>Оплата за товар</dt><dd>${fmt(r.goodsSum)}</dd><dt>Водителю за растаможку</dt><dd>${fmt(r.driver)}</dd><dt>Китайцам на границе</dt><dd>${fmt(r.border)}</dd>
+      ${extras(r).map(x => `<dt>${esc(x.name)}</dt><dd>${fmt(x.amount)}</dd>`).join('')}
+      <dt class="total">Итого</dt><dd class="total">${fmt(tot(r))}</dd></dl>${r.note ? `<div class="t-meta" style="margin-top:8px">${esc(r.note)}</div>` : ''}</div>`;
+  }).join('') : '<div class="card empty">Фур пока нет</div>';
+}
+
+/* ================= Навигация и рендер ================= */
+let current = lsGet('fnix_tab', 'kaspi');
+function showTab(t) {
+  current = t; lsSet('fnix_tab', t);
+  $$('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
+  render();
+}
+$('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
+function render() {
+  fillDatalists();
+  ({ kaspi: renderKaspi, cost: renderCost, dds: renderDds, pnl: renderPnl, opt: renderOpt, trucks: renderTrucks })[current]();
+}
+
+/* ================= Вход ================= */
+function showLogin(msg = '') { $('#login').classList.remove('hidden'); $('#loginErr').textContent = msg; $('#pinInput').focus(); }
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault(); pin = $('#pinInput').value.trim(); if (!pin) return;
+  $('#loginErr').textContent = 'Проверяю…';
+  try { const ok = await loadRemote(); if (ok !== false) { lsSet(LS.pin, pin); $('#login').classList.add('hidden'); } }
+  catch { $('#loginErr').textContent = 'Нет связи с Google. Проверьте интернет.'; }
+});
+
+/* ================= Старт ================= */
+const cached = lsGet(LS.state, null);
+if (cached) Object.keys(S).forEach(k => S[k] = normalize(k, cached[k]));
+showTab(current);
+if (!remote) syncStatus();
+else if (!pin) showLogin();
+else loadRemote().catch(() => syncStatus());
+window.addEventListener('online', flush);
+
+/* ================= Снег ================= */
+(function snow() {
+  const c = $('#snow'), x = c.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let w, h, flakes = [];
+  const resize = () => { w = c.width = innerWidth * devicePixelRatio; h = c.height = innerHeight * devicePixelRatio; };
+  resize(); addEventListener('resize', resize);
+  const N = reduce ? 40 : Math.min(160, Math.round(innerWidth / 9));
+  for (let i = 0; i < N; i++) flakes.push({ x: Math.random() * w, y: Math.random() * h, r: (Math.random() * 2.2 + .6) * devicePixelRatio, s: Math.random() * .8 + .3, d: Math.random() * Math.PI * 2, o: Math.random() * .6 + .3 });
+  function draw() {
+    x.clearRect(0, 0, w, h);
+    flakes.forEach(f => {
+      x.beginPath(); x.arc(f.x, f.y, f.r, 0, 7); x.fillStyle = `rgba(255,255,255,${f.o})`; x.fill();
+      if (!reduce) { f.y += f.s * devicePixelRatio; f.d += .01; f.x += Math.sin(f.d) * .4 * devicePixelRatio;
+        if (f.y > h + 5) { f.y = -5; f.x = Math.random() * w; } if (f.x > w + 5) f.x = -5; if (f.x < -5) f.x = w + 5; }
+    });
+    if (!reduce) requestAnimationFrame(draw);
+  }
+  draw();
+})();
+})();
