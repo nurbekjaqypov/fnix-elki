@@ -5,7 +5,7 @@ const CFG = window.CONFIG || {};
 const COMM = CFG.KASPI_COMMISSION ?? 0.12;
 const TAX = CFG.TAX_RATE ?? 0.03;
 const TAXL = 'Налог ' + +(TAX * 100).toFixed(2) + '%';
-const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', stores: 'Магазины', opt: 'Опт', trucks: 'Фуры' };
+const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', stores: 'Магазины', leads: 'Лиды', opt: 'Опт', trucks: 'Фуры' };
 const NUMS = ['amount', 'cost', 'sum', 'qty', 'logistics', 'goodsSum', 'driver', 'customs', 'border'];
 const LS = { state: 'fnix_state', outbox: 'fnix_outbox', pin: 'fnix_pin', period: 'fnix_period' };
 const CHANNELS = ['Kaspi', 'Опт', 'WB', 'Общее'];
@@ -28,10 +28,15 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JS
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
 
 /* ================= Хранилище ================= */
-let S = { dds: [], cost: [], map: [], kaspi: [], stores: [], opt: [], trucks: [] };
+let S = { dds: [], cost: [], map: [], kaspi: [], stores: [], leads: [], opt: [], trucks: [] };
 let outbox = lsGet(LS.outbox, []);
 let pin = lsGet(LS.pin, '');
 const remote = !!CFG.API_URL;
+let role = lsGet('fnix_role', 'owner');
+const RO = () => remote && role === 'manager';
+const MANAGER_KEYS = ['leads', 'opt'];
+const canEdit = key => !RO() || MANAGER_KEYS.includes(key);
+const whoAmI = () => RO() ? 'Менеджер' : 'Владелец';
 let flushing = false;
 
 function normalize(key, rows) {
@@ -41,6 +46,7 @@ function normalize(key, rows) {
     NUMS.forEach(k => { if (k in o) o[k] = num(o[k]); });
     if (o.date) o.date = String(o.date).slice(0, 10);
     if (key === 'kaspi' && o.order !== undefined) o.order = String(o.order);
+    if (key === 'leads') { o.phone = String(o.phone ?? ''); if (o.next) o.next = String(o.next).slice(0, 10); }
     return o;
   });
 }
@@ -83,12 +89,14 @@ async function flush() {
 function queue(op) { outbox.push(op); persist(); flush(); }
 
 function put(key, rows, silent) {
+  if (!canEdit(key)) { toast('Менеджер может менять только вкладку «Опт · лиды»'); return; }
   const idx = new Map(S[key].map((r, i) => [r.id, i]));
   rows.forEach(r => { if (idx.has(r.id)) S[key][idx.get(r.id)] = r; else { idx.set(r.id, S[key].length); S[key].push(r); } });
   for (let i = 0; i < rows.length; i += 800) queue({ action: 'upsert', sheet: SHEETS[key], rows: rows.slice(i, i + 800) });
   persist(); if (!silent) render();
 }
 function del(key, ids) {
+  if (!canEdit(key)) { toast('Менеджер может менять только вкладку «Опт · лиды»'); return; }
   const set = new Set(ids);
   if (key === 'dds') S.dds.forEach(r => { if (set.has(r.id)) r.deleted = nowIso(); });
   else S[key] = S[key].filter(r => !set.has(r.id));
@@ -102,6 +110,7 @@ async function loadRemote() {
   const res = await fetch(CFG.API_URL + '?pin=' + encodeURIComponent(pin));
   const j = await res.json();
   if (!j.ok) { if (j.error === 'pin') { lsSet(LS.pin, ''); showLogin('Неверный ПИН'); return false; } throw new Error(j.error); }
+  role = j.role || 'owner'; lsSet('fnix_role', role); applyRole();
   Object.entries(SHEETS).forEach(([k, name]) => { S[k] = normalize(k, j.data[name]); });
   const keyOf = Object.fromEntries(Object.entries(SHEETS).map(([k, n]) => [n, k]));
   outbox.forEach(op => {   // не потерять то, что ещё не дошло до Google
@@ -391,9 +400,9 @@ function renderCost() {
   const list = costNames();
   $('#costTable').innerHTML = list.length ? `<thead><tr><th>Наименование</th><th class="n">Себестоимость, ₸</th><th class="n">Продано на Kaspi, шт</th><th></th></tr></thead><tbody>` +
     list.map(x => `<tr><td>${esc(x.name)} ${x.row ? '' : '<span class="tag warn">не указана</span>'}</td>
-      <td class="n"><input class="cost-input" type="number" step="any" data-name="${esc(x.name)}" value="${x.row ? x.row.cost : ''}" placeholder="0"></td>
+      <td class="n"><input class="cost-input" ${RO() ? 'disabled' : ''} type="number" step="any" data-name="${esc(x.name)}" value="${x.row ? x.row.cost : ''}" placeholder="0"></td>
       <td class="n">${fmtN(usage[String(x.name).trim().toLowerCase()] || 0)}</td>
-      <td class="n">${x.row ? `<button class="icon-btn" title="Удалить цену" data-del-cost="${esc(x.row.id)}">🗑</button>` : ''}</td></tr>`).join('') + '</tbody>'
+      <td class="n">${x.row ? `<button class="icon-btn owner-only" title="Удалить цену" data-del-cost="${esc(x.row.id)}">🗑</button>` : ''}</td></tr>`).join('') + '</tbody>'
     : `<tr><td class="empty">Наименования появятся после сопоставления карточек Kaspi или добавьте вручную</td></tr>`;
 }
 $('#costTable').addEventListener('change', e => {
@@ -459,6 +468,7 @@ function fillDatalists() {
   set('dl-purpose', freq(live, 'purpose'));
   set('dl-buyer', freq(S.opt, 'buyer'));
   set('dl-model', costNames().map(x => x.name));
+  set('dl-city', freq(S.leads, 'city')); set('dl-source', freq(S.leads, 'source'));
 }
 $('#ddsSearch').addEventListener('input', () => renderDds());
 $('#ddsTable').addEventListener('click', e => {
@@ -492,8 +502,8 @@ function renderDds() {
   $('#ddsTable').innerHTML = rows.length ? `<thead><tr><th>Дата</th><th>Канал</th><th>Вид</th><th>Статья</th><th>Контрагент</th><th>Оплата</th><th>Назначение</th><th class="n">Сумма</th><th></th></tr></thead><tbody>` +
     rows.map(r => `<tr class="${trash ? 'del' : ''}"><td>${ruDate(r.date)}</td><td><span class="tag">${esc(r.channel)}</span></td><td>${esc(r.kind)}</td>
       <td>${esc(r.item)}${isTree(r) ? '<span class="tag tree" title="Связано с ёлками">🎄</span>' : ''}</td><td>${esc(r.counterparty)}</td><td>${esc(r.payment)}</td><td>${esc(r.purpose)}</td><td class="n">${fmt(r.amount)}</td>
-      <td class="n" style="text-decoration:none;opacity:1">${trash ? `<button class="icon-btn" data-act="restore" data-id="${esc(r.id)}" title="Восстановить">↺</button>`
-        : `<button class="icon-btn" data-act="edit" data-id="${esc(r.id)}" title="Изменить">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}" title="Удалить">🗑</button>`}</td></tr>`).join('') +
+      <td class="n" style="text-decoration:none;opacity:1">${trash ? `<button class="icon-btn owner-only" data-act="restore" data-id="${esc(r.id)}" title="Восстановить">↺</button>`
+        : `<button class="icon-btn owner-only" data-act="edit" data-id="${esc(r.id)}" title="Изменить">✎</button><button class="icon-btn owner-only" data-act="del" data-id="${esc(r.id)}" title="Удалить">🗑</button>`}</td></tr>`).join('') +
     `<tr><td colspan="7"><b>Итого</b></td><td class="n"><b>${fmt(sum(rows, 'amount'))}</b></td><td></td></tr></tbody>`
     : `<tr><td class="empty">${trash ? 'Удалённых записей нет' : 'Расходов за период нет'}</td></tr>`;
 }
@@ -560,13 +570,16 @@ function renderPnl() {
 
 /* ================= Опт ================= */
 const optForm = $('#optForm');
-function optReset() { optForm.reset(); delete optForm.dataset.id; optForm.date.value = today(); $('#optFormTitle').textContent = 'Новая оптовая продажа'; $('#optCancel').classList.add('hidden'); }
+function optReset() { optForm.reset(); delete optForm.dataset.id; delete optForm.dataset.lead; optForm.date.value = today(); $('#optFormTitle').textContent = 'Новая оптовая продажа'; $('#optCancel').classList.add('hidden'); }
 optReset();
 $('#optCancel').addEventListener('click', optReset);
 optForm.addEventListener('submit', e => {
   e.preventDefault(); const id = optForm.dataset.id; const prev = id ? S.opt.find(r => r.id === id) : null;
-  put('opt', [{ id: id || uid(), date: optForm.date.value, buyer: optForm.buyer.value.trim(), model: optForm.model.value.trim(), qty: num(optForm.qty.value),
-    sum: num(optForm.sum.value), note: optForm.note.value.trim(), created: prev ? prev.created : nowIso() }]);
+  const saleId = id || uid(), leadId = optForm.dataset.lead || (prev && prev.lead) || '';
+  put('opt', [{ id: saleId, date: optForm.date.value, buyer: optForm.buyer.value.trim(), model: optForm.model.value.trim(), qty: num(optForm.qty.value),
+    sum: num(optForm.sum.value), note: optForm.note.value.trim(), lead: leadId, created: prev ? prev.created : nowIso() }]);
+  if (leadId && !id) { const l = S.leads.find(x => x.id === leadId); if (l) put('leads', [{ ...l, stage: 'Сделка', sale: saleId, updated: nowIso(), by: whoAmI(),
+    log: JSON.stringify([...leadLog(l), { ts: nowIso(), by: whoAmI(), text: `Сделка: ${optForm.model.value.trim()}, ${optForm.qty.value} шт, ${fmt(num(optForm.sum.value))}` }]) }], true); }
   toast(id ? 'Продажа изменена' : 'Продажа сохранена'); optReset();
 });
 $('#optTable').addEventListener('click', e => {
@@ -577,6 +590,10 @@ $('#optTable').addEventListener('click', e => {
   } else if (confirm(`Удалить продажу ${r.buyer} — ${r.model}?`)) del('opt', [r.id]);
 });
 function renderOpt() {
+  const view = segVal($('#optView'));
+  $('#crmView').classList.toggle('hidden', view !== 'crm');
+  $('#salesView').classList.toggle('hidden', view !== 'sales');
+  if (view === 'crm') return renderCrm();
   const o = optCalc('opt');
   $('#optKpis').innerHTML = kpi('Выручка опт', fmt(o.rev), `${fmtN(o.qty)} шт`) + kpi('Себестоимость', fmt(o.cogs), o.noCost ? `<span class="neg">без себестоимости: ${o.noCost}</span>` : '') +
     kpi(TAXL, fmt(o.tax)) + kpi('Прибыль после налога', sign(o.profit), 'маржа ' + pct(o.profit, o.rev), 'hl') + kpi('Покупателей', fmtN(new Set(o.rows.map(r => r.buyer)).size));
@@ -587,6 +604,153 @@ function renderOpt() {
       <td class="n"><button class="icon-btn" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}">🗑</button></td></tr>`).join('') + '</tbody>'
     : `<tr><td class="empty">Оптовых продаж за период нет</td></tr>`;
 }
+
+/* ================= CRM: лиды ================= */
+const STAGES = ['Новый', 'Связались', 'Отправили прайс', 'Сделка', 'Отказ'];
+const OPEN = ['Новый', 'Связались', 'Отправили прайс'];
+const leadLog = l => { try { const a = Array.isArray(l.log) ? l.log : JSON.parse(l.log || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+const phoneDigits = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 11 && d[0] === '8') d = '7' + d.slice(1); if (d.length === 10) d = '7' + d; return d; };
+const phoneFmt = p => { const d = phoneDigits(p); return d.length === 11 ? `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7, 9)} ${d.slice(9)}` : (p || ''); };
+const waLink = p => 'https://wa.me/' + phoneDigits(p);
+const dueTag = l => { if (!l.next || !OPEN.includes(l.stage)) return ''; const t = today();
+  return l.next < t ? `<span class="tag due">просрочено ${ruDate(l.next).slice(0, 5)}</span>` : l.next === t ? '<span class="tag today">сегодня</span>' : `<span class="tag">${ruDate(l.next).slice(0, 5)}</span>`; };
+
+$('#optView').addEventListener('click', () => setTimeout(render));
+$('#crmSearch').addEventListener('input', () => renderCrm());
+
+const leadForm = $('#leadForm');
+leadForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const d = phoneDigits(leadForm.phone.value);
+  if (d.length < 10) return toast('Проверьте номер телефона');
+  const dup = S.leads.find(l => phoneDigits(l.phone) === d);
+  if (dup) { toast('Этот номер уже есть — открыл карточку'); leadForm.phone.value = ''; openLead(dup.id); return; }
+  const note = leadForm.note.value.trim();
+  const l = { id: uid(), created: nowIso(), name: leadForm.name.value.trim(), phone: d, city: leadForm.city.value.trim(), source: leadForm.source.value.trim(),
+    stage: 'Новый', next: today(), note, lost: '', sale: '', updated: nowIso(), by: whoAmI(),
+    log: JSON.stringify(note ? [{ ts: nowIso(), by: whoAmI(), text: note }] : []) };
+  put('leads', [l]); toast('Лид добавлен');
+  const src = l.source; leadForm.reset(); leadForm.source.value = src; leadForm.name.focus();
+});
+
+// доска
+const board = $('#board');
+let dragId = null;
+board.addEventListener('dragstart', e => { const c = e.target.closest('.lead'); if (!c) return; dragId = c.dataset.id; c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+board.addEventListener('dragend', e => { e.target.closest('.lead')?.classList.remove('dragging'); $$('.col.over').forEach(x => x.classList.remove('over')); });
+board.addEventListener('dragover', e => { const col = e.target.closest('.col'); if (!col || !dragId) return; e.preventDefault(); $$('.col.over').forEach(x => x !== col && x.classList.remove('over')); col.classList.add('over'); });
+board.addEventListener('drop', e => {
+  const col = e.target.closest('.col'); if (!col || !dragId) return; e.preventDefault();
+  const id = dragId; dragId = null; moveLead(id, col.dataset.stage);
+});
+board.addEventListener('click', e => {
+  if (e.target.closest('a')) return;
+  const c = e.target.closest('.lead'); if (c) openLead(c.dataset.id);
+});
+function moveLead(id, stage) {
+  const l = S.leads.find(x => x.id === id); if (!l || l.stage === stage) return;
+  if (stage === 'Сделка') { openLead(id); setTimeout(() => $('#lmDeal').focus(), 50); return toast('Оформите продажу — лид перейдёт в «Сделку»'); }
+  let lost = l.lost;
+  if (stage === 'Отказ') { lost = (prompt('Причина отказа', l.lost || '') ?? '').trim(); if (!lost) return; }
+  put('leads', [{ ...l, stage, lost, updated: nowIso(), by: whoAmI(),
+    log: JSON.stringify([...leadLog(l), { ts: nowIso(), by: whoAmI(), text: `Этап: ${l.stage} → ${stage}` + (stage === 'Отказ' ? ` (${lost})` : '') }]) }]);
+}
+
+function renderCrm() {
+  const q = $('#crmSearch').value.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+  const match = l => !q || [l.name, l.city, l.source, l.note].join(' ').toLowerCase().includes(q) || (qd.length >= 3 && phoneDigits(l.phone).includes(qd));
+  const inPer = l => inP(String(l.created).slice(0, 10), 'crm');
+  const shown = S.leads.filter(l => match(l) && (OPEN.includes(l.stage) || inPer(l) || (l.stage === 'Сделка' && saleIn(l))));
+  const per = S.leads.filter(inPer);
+  const deals = per.filter(l => l.stage === 'Сделка');
+  const leadSales = S.opt.filter(r => r.lead && inP(r.date, 'crm'));
+  const t = today();
+  const due = S.leads.filter(l => OPEN.includes(l.stage) && l.next && l.next <= t).length;
+  $('#crmKpis').innerHTML = kpi('Лидов за период', fmtN(per.length)) + kpi('В работе', fmtN(S.leads.filter(l => OPEN.includes(l.stage)).length)) +
+    kpi('Позвонить сегодня', due ? `<span class="${S.leads.some(l => OPEN.includes(l.stage) && l.next && l.next < t) ? 'neg' : ''}">${due}</span>` : '0', 'включая просроченные') +
+    kpi('Сделок', fmtN(deals.length), 'из лидов за период') + kpi('Конверсия в сделку', pct(deals.length, per.length)) +
+    kpi('Выручка с лидов', fmt(sum(leadSales, 'sum')), `продаж: ${leadSales.length}`, 'hl');
+  board.innerHTML = STAGES.map(st => {
+    const ls = shown.filter(l => (l.stage || 'Новый') === st).sort((a, b) => OPEN.includes(st) ? String(a.next || '9').localeCompare(String(b.next || '9')) : String(b.updated).localeCompare(String(a.updated)));
+    const money = st === 'Сделка' ? fmt(sum(ls, l => (S.opt.find(r => r.id === l.sale) || {}).sum || 0)) : '';
+    return `<div class="col" data-stage="${st}"><div class="col-h"><span>${st} <span class="c">${ls.length}</span></span><span class="s">${money}</span></div>` +
+      ls.map(l => `<div class="lead" draggable="true" data-id="${esc(l.id)}">
+        <div class="ln">${esc(l.name || 'Без имени')}</div>
+        <div class="lp"><a class="wa" href="${waLink(l.phone)}" target="_blank" rel="noopener">${esc(phoneFmt(l.phone))}</a>${l.city ? ' · ' + esc(l.city) : ''}</div>
+        ${l.stage === 'Отказ' && l.lost ? `<div class="lnote">✕ ${esc(l.lost)}</div>` : l.note ? `<div class="lnote">${esc(l.note)}</div>` : ''}
+        <div class="lmeta">${dueTag(l)}${l.source ? `<span class="tag src">${esc(l.source)}</span>` : ''}</div></div>`).join('') + '</div>';
+  }).join('');
+  // источники
+  const src = {};
+  per.forEach(l => { const k = l.source || 'Не указан'; const x = src[k] ||= { n: 0, deals: 0, rev: 0 }; x.n++; if (l.stage === 'Сделка') x.deals++; });
+  leadSales.forEach(r => { const l = S.leads.find(x => x.id === r.lead); const k = (l && l.source) || 'Не указан'; (src[k] ||= { n: 0, deals: 0, rev: 0 }).rev += r.sum; });
+  const sl = Object.entries(src).sort((a, b) => b[1].n - a[1].n);
+  $('#crmSources').innerHTML = sl.length ? `<thead><tr><th>Источник / кампания</th><th class="n">Лидов</th><th class="n">Сделок</th><th class="n">Конверсия</th><th class="n">Выручка</th></tr></thead><tbody>` +
+    sl.map(([k, x]) => `<tr><td>${esc(k)}</td><td class="n">${fmtN(x.n)}</td><td class="n">${fmtN(x.deals)}</td><td class="n">${pct(x.deals, x.n)}</td><td class="n">${fmt(x.rev)}</td></tr>`).join('') + '</tbody>'
+    : '<tr><td class="empty">Лидов за период нет</td></tr>';
+}
+const saleIn = l => { const r = S.opt.find(x => x.id === l.sale); return r && inP(r.date, 'crm'); };
+
+// карточка лида
+const lm = $('#leadModal'), lmf = $('#lmForm');
+$('#lmStage').innerHTML = STAGES.map(s => `<option>${s}</option>`).join('');
+$('#lmStage').addEventListener('change', () => $('#lmLostWrap').classList.toggle('hidden', $('#lmStage').value !== 'Отказ'));
+let lmPending = [];
+function openLead(id) {
+  const l = S.leads.find(x => x.id === id); if (!l) return;
+  lmf.dataset.id = id; lmPending = [];
+  ['name', 'city', 'source', 'next', 'lost'].forEach(k => lmf[k].value = l[k] || '');
+  lmf.phone.value = phoneFmt(l.phone); lmf.stage.value = l.stage || 'Новый';
+  $('#lmLostWrap').classList.toggle('hidden', lmf.stage.value !== 'Отказ');
+  $('#lmTitle').textContent = (l.name || 'Лид') + ' · создан ' + ruDate(String(l.created).slice(0, 10));
+  $('#lmWa').href = waLink(l.phone);
+  const sale = S.opt.find(r => r.id === l.sale);
+  $('#lmDeal').textContent = sale ? `Продажа: ${fmt(sale.sum)} — открыть` : 'Сделка → оформить продажу';
+  renderLog(l); lm.classList.remove('hidden');
+}
+function renderLog(l) {
+  const items = [...leadLog(l), ...lmPending].reverse();
+  $('#lmLog').innerHTML = items.length ? items.map(x => `<div><small>${ruDate(String(x.ts).slice(0, 10))} ${String(x.ts).slice(11, 16)} · ${esc(x.by || '')}</small>${esc(x.text)}</div>`).join('') : '<div class="empty">Пока пусто</div>';
+}
+const closeLead = () => { lm.classList.add('hidden'); lmPending = []; };
+$('#lmClose').addEventListener('click', closeLead);
+lm.addEventListener('click', e => { if (e.target === lm) closeLead(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !lm.classList.contains('hidden')) closeLead(); });
+function addNote() {
+  const t = $('#lmNote').value.trim(); if (!t) return;
+  lmPending.push({ ts: nowIso(), by: whoAmI(), text: t }); $('#lmNote').value = '';
+  renderLog(S.leads.find(x => x.id === lmf.dataset.id));
+}
+$('#lmNoteAdd').addEventListener('click', addNote);
+$('#lmNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addNote(); } });
+function saveLead() {
+  const l = S.leads.find(x => x.id === lmf.dataset.id); if (!l) return null;
+  addNote();
+  let stage = lmf.stage.value;
+  if (stage === 'Сделка' && !l.sale) stage = l.stage === 'Сделка' ? 'Сделка' : l.stage;   // «Сделка» — только через продажу
+  if (stage === 'Отказ' && !lmf.lost.value.trim()) { toast('Укажите причину отказа'); lmf.lost.focus(); return null; }
+  const log = [...leadLog(l), ...lmPending];
+  if (stage !== l.stage) log.push({ ts: nowIso(), by: whoAmI(), text: `Этап: ${l.stage} → ${stage}` });
+  const last = lmPending.length ? lmPending[lmPending.length - 1].text : l.note;
+  const n = { ...l, name: lmf.name.value.trim(), phone: phoneDigits(lmf.phone.value) || l.phone, city: lmf.city.value.trim(), source: lmf.source.value.trim(),
+    stage, next: lmf.next.value, lost: stage === 'Отказ' ? lmf.lost.value.trim() : '', note: last, log: JSON.stringify(log), updated: nowIso(), by: whoAmI() };
+  put('leads', [n]); lmPending = [];
+  return n;
+}
+lmf.addEventListener('submit', e => { e.preventDefault(); if (saveLead()) { closeLead(); toast('Лид сохранён'); } });
+$('#lmDeal').addEventListener('click', () => {
+  const l = saveLead(); if (!l) return; closeLead();
+  setSeg($('#optView'), 'sales'); render();
+  const sale = S.opt.find(r => r.id === l.sale);
+  if (sale) { $(`#optTable [data-act=edit][data-id="${sale.id}"]`)?.click(); return; }
+  optReset(); optForm.dataset.lead = l.id;
+  optForm.buyer.value = l.name || phoneFmt(l.phone); optForm.note.value = 'Лид ' + phoneFmt(l.phone) + (l.source ? ' · ' + l.source : '');
+  $('#optFormTitle').textContent = 'Продажа по лиду: ' + (l.name || phoneFmt(l.phone)); $('#optCancel').classList.remove('hidden');
+  optForm.scrollIntoView({ behavior: 'smooth' }); optForm.model.focus();
+});
+$('#lmDel').addEventListener('click', () => {
+  const id = lmf.dataset.id; if (!confirm('Удалить лид совсем?')) return; closeLead(); del('leads', [id]);
+});
 
 /* ================= Фуры ================= */
 const usd = n => '$' + (Math.round(n * 100) / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
@@ -653,7 +817,7 @@ function renderTrucks() {
     const st = r.payStatus === 'Оплачено' ? 'paid' : r.payStatus === 'Частично' ? 'part' : 'warn';
     return `<div class="truck"><div class="t-head"><div><div class="t-name">🚛 ${esc(r.truck)}</div><div class="t-meta">${ruDate(r.date)}${r.contract ? ' · контракт ' + esc(r.contract) : ''}</div></div>
       <div><span class="tag ${st}">${esc(r.payStatus || 'Не оплачено')}</span>
-      <button class="icon-btn" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}">🗑</button></div></div>
+      <button class="icon-btn owner-only" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn owner-only" data-act="del" data-id="${esc(r.id)}">🗑</button></div></div>
       ${(g => g.length ? `<table class="goods-t">${g.map(x => `<tr><td>${esc(x.model)}</td><td class="n">${fmtN(x.qty)} шт</td></tr>`).join('')}${g.length > 1 ? `<tr class="sum"><td>Всего</td><td class="n">${fmtN(sum(g, 'qty'))} шт</td></tr>` : ''}</table>` : '')(goodsOf(r))}
       <dl><dt>Оплата за товар</dt><dd>${usd(r.goodsSum)}</dd><dt>Оплата водителю</dt><dd>${usd(r.driver)}</dd><dt>Растаможка</dt><dd>${usd(num(r.customs))}</dd><dt>Китайцам на границе</dt><dd>${usd(r.border)}</dd>
       ${extras(r).map(x => `<dt>${esc(x.name)}</dt><dd>${usd(x.amount)}</dd>`).join('')}
@@ -675,18 +839,30 @@ function render() {
   ({ kaspi: renderKaspi, cost: renderCost, dds: renderDds, pnl: renderPnl, opt: renderOpt, trucks: renderTrucks })[current]();
 }
 
-/* ================= Вход ================= */
+/* ================= Вход и роли ================= */
+function applyRole() {
+  document.body.classList.toggle('ro', RO());
+  const b = $('#roleBadge');
+  b.textContent = whoAmI(); b.classList.toggle('hidden', !remote || !pin);
+  $('#logoutBtn').classList.toggle('hidden', !remote || !pin);
+}
+$('#logoutBtn').addEventListener('click', () => {
+  if (outbox.length && !confirm(`Не все изменения дошли до Google (${outbox.length}). Всё равно выйти?`)) return;
+  ['fnix_pin', 'fnix_role', 'fnix_state', 'fnix_outbox'].forEach(k => { try { localStorage.removeItem(k); } catch { } });
+  location.reload();
+});
 function showLogin(msg = '') { $('#login').classList.remove('hidden'); $('#loginErr').textContent = msg; $('#pinInput').focus(); }
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault(); pin = $('#pinInput').value.trim(); if (!pin) return;
   $('#loginErr').textContent = 'Проверяю…';
-  try { const ok = await loadRemote(); if (ok !== false) { lsSet(LS.pin, pin); $('#login').classList.add('hidden'); } }
+  try { const ok = await loadRemote(); if (ok !== false) { lsSet(LS.pin, pin); $('#login').classList.add('hidden'); applyRole(); toast(RO() ? 'Вход: менеджер' : 'Вход: полный доступ'); } }
   catch { $('#loginErr').textContent = 'Нет связи с Google. Проверьте интернет.'; }
 });
 
 /* ================= Старт ================= */
 const cached = lsGet(LS.state, null);
 if (cached) Object.keys(S).forEach(k => S[k] = normalize(k, cached[k]));
+applyRole();
 showTab(current);
 if (!remote) syncStatus();
 else if (!pin) showLogin();

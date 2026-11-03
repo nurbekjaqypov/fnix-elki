@@ -42,14 +42,14 @@
         <div class="brand-sub">Отчёт по продажам · Grantel</div>
       </div>
     </div>
-    <div class="sync" id="sync"><span class="dot"></span><span id="syncText">Загрузка…</span></div>
+    <div class="top-actions"><span id="roleBadge" class="tag hidden"></span><div class="sync" id="sync"><span class="dot"></span><span id="syncText">Загрузка…</span></div><button class="btn ghost sm hidden" id="logoutBtn" title="Выйти">Выйти</button></div>
   </div>
   <nav class="tabs" id="tabs">
     <button data-tab="kaspi" class="active">Продажи Kaspi</button>
     <button data-tab="cost">Себестоимость</button>
     <button data-tab="dds">ДДС</button>
     <button data-tab="pnl">ОПиУ</button>
-    <button data-tab="opt">Опт</button>
+    <button data-tab="opt">Опт · лиды</button>
     <button data-tab="trucks">Фуры</button>
   </nav>
 </header>
@@ -59,7 +59,7 @@
 <!-- ===== Kaspi ===== -->
 <section id="tab-kaspi" class="tab active">
   <div class="toolbar">
-    <label class="btn gold file-btn">Загрузить архив Kaspi<input type="file" id="kaspiFile" accept=".xlsx,.xls"></label>
+    <label class="btn gold file-btn owner-only">Загрузить архив Kaspi<input type="file" id="kaspiFile" accept=".xlsx,.xls"></label>
     <select id="kaspiStore" class="store-sel hidden"></select>
     <div class="period" data-period="kaspi"></div>
     <div class="seg" id="kaspiSeg">
@@ -79,8 +79,8 @@
     <div class="card-head"><h3>По товарам</h3>
       <div class="head-actions">
         <button class="btn ghost sm" id="tplBtn">Скачать шаблон сопоставления</button>
-        <label class="btn ghost sm file-btn">Загрузить шаблон<input type="file" id="tplFile" accept=".xlsx,.xls"></label>
-        <button class="btn ghost sm danger" id="kaspiClear">Очистить архив</button>
+        <label class="btn ghost sm file-btn owner-only">Загрузить шаблон<input type="file" id="tplFile" accept=".xlsx,.xls"></label>
+        <button class="btn ghost sm danger owner-only" id="kaspiClear">Очистить архив</button>
       </div>
     </div>
     <div class="table-wrap"><table id="kaspiTable"></table></div>
@@ -91,7 +91,7 @@
 <section id="tab-cost" class="tab">
   <div class="card">
     <div class="card-head"><h3>Себестоимость товаров</h3>
-      <form id="costAdd" class="inline-form">
+      <form id="costAdd" class="inline-form owner-only">
         <input name="name" placeholder="Наименование" required>
         <input name="cost" type="number" step="any" placeholder="Себестоимость, ₸" required>
         <button class="btn gold sm">Добавить</button>
@@ -104,7 +104,7 @@
 
 <!-- ===== ДДС ===== -->
 <section id="tab-dds" class="tab">
-  <div class="card">
+  <div class="card owner-only">
     <h3 id="ddsFormTitle">Новый расход</h3>
     <form id="ddsForm" class="form-grid">
       <label>Дата<input type="date" name="date" required></label>
@@ -171,6 +171,34 @@
 
 <!-- ===== Опт ===== -->
 <section id="tab-opt" class="tab">
+  <div class="toolbar">
+    <div class="seg" id="optView"><button data-v="crm" class="on">Лиды · воронка</button><button data-v="sales">Оптовые продажи</button></div>
+  </div>
+
+  <div id="crmView">
+    <div class="card">
+      <h3>Новый лид</h3>
+      <form id="leadForm" class="form-grid">
+        <label>Имя<input name="name" autocomplete="off" placeholder="Как представился"></label>
+        <label>Телефон (WhatsApp)<input name="phone" type="tel" inputmode="tel" required autocomplete="off" placeholder="+7 7__ ___ __ __"></label>
+        <label>Город<input name="city" list="dl-city" autocomplete="off"></label>
+        <label>Источник / кампания<input name="source" list="dl-source" autocomplete="off" placeholder="Таргет Instagram, ноябрь"></label>
+        <label class="wide">Комментарий<input name="note" autocomplete="off" placeholder="Что хочет, объём, сроки"></label>
+        <div class="form-actions wide"><button class="btn gold" type="submit">Добавить лид</button></div>
+      </form>
+      <datalist id="dl-city"></datalist><datalist id="dl-source"></datalist>
+    </div>
+    <div class="toolbar">
+      <div class="period" data-period="crm"></div>
+      <input id="crmSearch" class="search" placeholder="Имя, телефон…">
+    </div>
+    <div class="kpis" id="crmKpis"></div>
+    <div class="board" id="board"></div>
+    <p class="hint">Карточки можно перетаскивать между этапами. Открытые лиды видны всегда, сделки и отказы — за выбранный период.</p>
+    <div class="card"><h3>Источники лидов</h3><div class="table-wrap"><table id="crmSources"></table></div></div>
+  </div>
+
+  <div id="salesView" class="hidden">
   <div class="card">
     <h3 id="optFormTitle">Новая оптовая продажа</h3>
     <form id="optForm" class="form-grid">
@@ -190,11 +218,12 @@
   <div class="toolbar"><div class="period" data-period="opt"></div></div>
   <div class="kpis" id="optKpis"></div>
   <div class="card"><div class="table-wrap"><table id="optTable"></table></div></div>
+  </div>
 </section>
 
 <!-- ===== Фуры ===== -->
 <section id="tab-trucks" class="tab">
-  <div class="card">
+  <div class="card owner-only">
     <h3 id="truckFormTitle">Новая фура</h3>
     <form id="truckForm" class="form-grid">
       <label>Дата<input type="date" name="date" required></label>
@@ -232,6 +261,33 @@
 </section>
 
 </main>
+
+<div id="leadModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="lmTitle">Лид</h3><button class="icon-btn" id="lmClose" title="Закрыть">✕</button></div>
+    <form id="lmForm" class="form-grid two">
+      <label>Имя<input name="name" autocomplete="off"></label>
+      <label>Телефон<input name="phone" type="tel" required autocomplete="off"></label>
+      <label>Город<input name="city" list="dl-city" autocomplete="off"></label>
+      <label>Источник / кампания<input name="source" list="dl-source" autocomplete="off"></label>
+      <label>Этап<select name="stage" id="lmStage"></select></label>
+      <label>Следующий контакт<input name="next" type="date"></label>
+      <label class="wide hidden" id="lmLostWrap">Причина отказа<input name="lost" list="dl-lost" autocomplete="off"></label>
+      <div class="wide">
+        <div class="extra-head">История</div>
+        <div class="lm-add"><input id="lmNote" placeholder="Комментарий: о чём договорились" autocomplete="off"><button type="button" class="btn ghost sm" id="lmNoteAdd">Добавить</button></div>
+        <div id="lmLog" class="lm-log"></div>
+      </div>
+      <div class="form-actions wide lm-actions">
+        <button class="btn gold" type="submit">Сохранить</button>
+        <a class="btn ghost" id="lmWa" target="_blank" rel="noopener">WhatsApp</a>
+        <button class="btn ghost" type="button" id="lmDeal">Сделка → оформить продажу</button>
+        <button class="btn ghost danger owner-only" type="button" id="lmDel">Удалить</button>
+      </div>
+    </form>
+    <datalist id="dl-lost"><option value="Дорого"><option value="Не отвечает"><option value="Купил у других"><option value="Не актуально"><option value="Розница, не опт"></datalist>
+  </div>
+</div>
 
 <div id="toast" class="toast"></div>
 

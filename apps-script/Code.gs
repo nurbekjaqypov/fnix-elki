@@ -28,6 +28,9 @@ var SCHEMA = {
   'Kaspi': [['id','ID'],['order','№ заказа'],['date','Дата'],['kaspi','Название в Kaspi'],['sku','Артикул'],
             ['sum','Сумма'],['qty','Кол-во'],['status','Статус'],['logistics','Логистика'],['city','Город'],
             ['store','Магазин']],
+  'Лиды': [['id','ID'],['created','Создано'],['name','Имя'],['phone','Телефон'],['city','Город'],['source','Источник / кампания'],
+           ['stage','Этап'],['next','Следующий контакт'],['note','Последний комментарий'],['lost','Причина отказа'],
+           ['sale','ID продажи'],['log','История'],['updated','Изменено'],['by','Кто изменил']],
   'Магазины': [['id','ID'],['mid','ID магазина в Kaspi'],['name','Название']],
   'Опт': [['id','ID'],['date','Дата'],['buyer','Покупатель'],['model','Модель'],['qty','Кол-во'],['sum','Сумма'],
           ['note','Примечание'],['created','Создано']],
@@ -38,6 +41,7 @@ var SCHEMA = {
 };
 
 var HISTORY = 'ДДС_История';
+var MANAGER_SHEETS = { 'Лиды': true, 'Опт': true };   // что может менять менеджер
 var PROTECTED = { 'ДДС': true };     // листы, где записи не удаляются физически
 var BACKUP_FOLDER = 'FNIX Ёлки — бэкапы';
 var BACKUP_KEEP = 30;
@@ -51,11 +55,17 @@ function setup() {
     pin = String(Math.floor(100000 + Math.random() * 900000));
     props.setProperty('PIN', pin);
   }
+  var mpin = props.getProperty('MANAGER_PIN');
+  if (!mpin) {
+    do { mpin = String(Math.floor(100000 + Math.random() * 900000)); } while (mpin === pin);
+    props.setProperty('MANAGER_PIN', mpin);
+  }
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'dailyBackup') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(3).create();
-  Logger.log('Готово. ПИН для входа на сайт: ' + pin);
+  Logger.log('Готово. Ваш ПИН (полный доступ): ' + pin);
+  Logger.log('ПИН менеджера (видит всё, меняет только Опт и лиды): ' + mpin);
 }
 
 function now_() { return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd'T'HH:mm:ss"); }
@@ -111,8 +121,12 @@ function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function checkPin_(pin) {
-  return String(pin) === PropertiesService.getScriptProperties().getProperty('PIN');
+function role_(pin) {
+  var p = PropertiesService.getScriptProperties();
+  pin = String(pin || '');
+  if (pin && pin === p.getProperty('PIN')) return 'owner';
+  if (pin && pin === p.getProperty('MANAGER_PIN')) return 'manager';
+  return null;
 }
 
 function rows_(name) {
@@ -139,7 +153,8 @@ function toRow_(keys, o) {
 }
 
 function doGet(e) {
-  if (!checkPin_(e.parameter.pin)) return json_({ ok: false, error: 'pin' });
+  var role = role_(e.parameter.pin);
+  if (!role) return json_({ ok: false, error: 'pin' });
   var out = {};
   var names = Object.keys(SCHEMA);
   SpreadsheetApp.getActive().getSheets().forEach(function (s) {
@@ -149,7 +164,7 @@ function doGet(e) {
   names.forEach(function (name) {
     if (name !== HISTORY) out[name] = rows_(name);
   });
-  return json_({ ok: true, data: out });
+  return json_({ ok: true, role: role, data: out });
 }
 
 function doPost(e) {
@@ -157,9 +172,11 @@ function doPost(e) {
   lock.waitLock(20000);
   try {
     var req = JSON.parse(e.postData.contents);
-    if (!checkPin_(req.pin)) return json_({ ok: false, error: 'pin' });
+    var role = role_(req.pin);
+    if (!role) return json_({ ok: false, error: 'pin' });
     var name = req.sheet;
     if (!validName_(name)) return json_({ ok: false, error: 'sheet' });
+    if (role !== 'owner' && !MANAGER_SHEETS[name]) return json_({ ok: false, error: 'forbidden' });
     if (req.action === 'upsert') return json_(upsert_(name, req.rows || []));
     if (req.action === 'delete') return json_(remove_(name, req.ids || []));
     return json_({ ok: false, error: 'action' });
