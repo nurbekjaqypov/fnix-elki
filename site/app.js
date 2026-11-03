@@ -23,6 +23,7 @@ const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOff
 const nowIso = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 19); };
 const ruDate = d => d ? d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : '';
 const isFnix = name => /FNIX/i.test(name || '');
+const isTree = r => r.trees === true || /^(да|true|1)$/i.test(String(r.trees ?? '').trim());
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
 
@@ -422,7 +423,7 @@ ddsForm.addEventListener('submit', e => {
   const prev = id ? S.dds.find(r => r.id === id) : null;
   const row = { id: id || uid(), date: ddsForm.date.value, channel: segVal($('[data-name=channel]', ddsForm)), kind: segVal($('[data-name=kind]', ddsForm)),
     item: ddsForm.item.value.trim(), counterparty: ddsForm.counterparty.value.trim(), payment: ddsForm.payment.value.trim(),
-    amount: num(ddsForm.amount.value), purpose: ddsForm.purpose.value.trim(), created: prev ? prev.created : nowIso(), updated: nowIso(), deleted: prev ? prev.deleted : '' };
+    amount: num(ddsForm.amount.value), purpose: ddsForm.purpose.value.trim(), trees: ddsForm.trees.checked ? 'да' : '', created: prev ? prev.created : nowIso(), updated: nowIso(), deleted: prev ? prev.deleted : '' };
   put('dds', [row]); toast(id ? 'Расход изменён' : 'Расход сохранён');
   const keep = { channel: row.channel, kind: row.kind, date: row.date };
   ddsReset(); ddsForm.date.value = keep.date;
@@ -459,7 +460,7 @@ $('#ddsTable').addEventListener('click', e => {
   const r = S.dds.find(x => x.id === b.dataset.id); if (!r) return;
   if (b.dataset.act === 'edit') {
     ddsForm.dataset.id = r.id; ddsForm.date.value = r.date; setSeg($('[data-name=channel]', ddsForm), r.channel); setSeg($('[data-name=kind]', ddsForm), r.kind);
-    ddsForm.item.value = r.item; ddsForm.counterparty.value = r.counterparty; ddsForm.payment.value = r.payment; ddsForm.amount.value = r.amount; ddsForm.purpose.value = r.purpose;
+    ddsForm.item.value = r.item; ddsForm.counterparty.value = r.counterparty; ddsForm.payment.value = r.payment; ddsForm.amount.value = r.amount; ddsForm.purpose.value = r.purpose; ddsForm.trees.checked = isTree(r);
     $('#ddsFormTitle').textContent = 'Правка расхода'; $('#ddsCancel').classList.remove('hidden'); ddsForm.scrollIntoView({ behavior: 'smooth' });
   } else if (b.dataset.act === 'del') {
     if (confirm(`Удалить расход «${r.item}» на ${fmt(r.amount)}? Он останется в «Удалённых» и в Google Таблице.`)) { del('dds', [r.id]); toast('Перемещено в удалённые'); }
@@ -480,10 +481,11 @@ function renderDds() {
   $('#ddsKpis').innerHTML = kpi('Всего расходов', fmt(sum(base, 'amount')), `${base.length} записей`, 'hl') +
     CHANNELS.map(c => kpi(c, fmt(byCh(c)))).join('') +
     kpi('Постоянные', fmt(sum(base.filter(r => r.kind === 'Постоянный'), 'amount'))) +
-    kpi('Переменные', fmt(sum(base.filter(r => r.kind !== 'Постоянный'), 'amount')));
+    kpi('Переменные', fmt(sum(base.filter(r => r.kind !== 'Постоянный'), 'amount'))) +
+    kpi('🎄 Связано с ёлками', fmt(sum(base.filter(isTree), 'amount')));
   $('#ddsTable').innerHTML = rows.length ? `<thead><tr><th>Дата</th><th>Канал</th><th>Вид</th><th>Статья</th><th>Контрагент</th><th>Оплата</th><th>Назначение</th><th class="n">Сумма</th><th></th></tr></thead><tbody>` +
     rows.map(r => `<tr class="${trash ? 'del' : ''}"><td>${ruDate(r.date)}</td><td><span class="tag">${esc(r.channel)}</span></td><td>${esc(r.kind)}</td>
-      <td>${esc(r.item)}</td><td>${esc(r.counterparty)}</td><td>${esc(r.payment)}</td><td>${esc(r.purpose)}</td><td class="n">${fmt(r.amount)}</td>
+      <td>${esc(r.item)}${isTree(r) ? '<span class="tag tree" title="Связано с ёлками">🎄</span>' : ''}</td><td>${esc(r.counterparty)}</td><td>${esc(r.payment)}</td><td>${esc(r.purpose)}</td><td class="n">${fmt(r.amount)}</td>
       <td class="n" style="text-decoration:none;opacity:1">${trash ? `<button class="icon-btn" data-act="restore" data-id="${esc(r.id)}" title="Восстановить">↺</button>`
         : `<button class="icon-btn" data-act="edit" data-id="${esc(r.id)}" title="Изменить">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}" title="Удалить">🗑</button>`}</td></tr>`).join('') +
     `<tr><td colspan="7"><b>Итого</b></td><td class="n"><b>${fmt(sum(rows, 'amount'))}</b></td><td></td></tr></tbody>`
@@ -492,7 +494,10 @@ function renderDds() {
 
 /* ================= ОПиУ ================= */
 function pnlFor(periodKey, seg, store = 'all') {
-  const k = kaspiCalc(periodKey, seg, store), o = optCalc(periodKey), d = ddsInPeriod(periodKey);
+  const k = kaspiCalc(periodKey, seg, store), o = optCalc(periodKey);
+  let d = ddsInPeriod(periodKey);
+  const tm = segVal($('#pnlTrees'));
+  if (tm === 'no') d = d.filter(r => !isTree(r)); else if (tm === 'only') d = d.filter(isTree);
   const exp = (ch, kind) => sum(d.filter(r => r.channel === ch && (kind === 'Постоянный' ? r.kind === 'Постоянный' : r.kind !== 'Постоянный')), 'amount');
   const col = {
     Kaspi: { rev: k.rev, comm: k.comm, log: k.log, cogs: k.cogs },

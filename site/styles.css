@@ -91,6 +91,9 @@ input[type=date]{color-scheme:dark}
 .form-grid .wide{grid-column:1/-1}
 .form-grid .seg-input{width:max-content;max-width:100%}
 .form-actions{display:flex;gap:10px}
+.form-grid label.check{flex-direction:row;align-items:center;gap:10px;font-size:14px;color:var(--text);cursor:pointer;width:max-content}
+.form-grid label.check input{width:20px;height:20px;accent-color:var(--gold);margin:0;cursor:pointer}
+.tag.tree{background:rgba(76,194,138,.16);color:#8fe6bb;margin-left:6px}
 .inline-form{display:flex;gap:8px;flex-wrap:wrap}
 .inline-form input{width:200px}
 .extra-head{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:10px;margin-bottom:8px}

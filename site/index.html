@@ -127,6 +127,7 @@
       <label>Способ оплаты<input name="payment" list="dl-payment" autocomplete="off"></label>
       <label>Сумма, ₸<input name="amount" type="number" step="any" min="0" required></label>
       <label class="wide">Назначение<input name="purpose" list="dl-purpose" autocomplete="off"></label>
+      <label class="check wide"><input type="checkbox" name="trees"><span>🎄 Связано с ёлками</span></label>
       <div class="form-actions wide">
         <button class="btn gold" type="submit" id="ddsSubmit">Сохранить</button>
         <button class="btn ghost hidden" type="button" id="ddsCancel">Отменить правку</button>
@@ -154,6 +155,9 @@
     <select id="pnlStore" class="store-sel hidden"></select>
     <div class="seg" id="pnlSeg">
       <button data-v="all" class="on">Kaspi: все</button><button data-v="fnix">Kaspi: FNIX</button><button data-v="other">Kaspi: общие</button>
+    </div>
+    <div class="seg" id="pnlTrees">
+      <button data-v="all" class="on">Все расходы</button><button data-v="no">Без расходов по ёлкам</button><button data-v="only">Только по ёлкам</button>
     </div>
   </div>
   <div class="kpis" id="pnlKpis"></div>
