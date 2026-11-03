@@ -100,7 +100,8 @@ input[type=date]{color-scheme:dark}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
 .kpi{background:var(--card);border:1px solid var(--card-b);border-radius:14px;padding:14px 16px;backdrop-filter:blur(10px)}
 .kpi .l{font-size:12px;color:var(--muted);font-weight:600}
-.kpi .v{font-family:Unbounded,sans-serif;font-size:19px;margin-top:6px;white-space:nowrap}
+.kpi{min-width:0}
+.kpi .v{font-family:Unbounded,sans-serif;font-size:clamp(15px,1.45vw,19px);margin-top:6px;overflow-wrap:anywhere}
 .kpi .s{font-size:12px;color:var(--muted);margin-top:4px}
 .kpi.hl{border-color:rgba(232,194,107,.4);background:linear-gradient(160deg,rgba(232,194,107,.14),var(--card))}
 .pos{color:var(--green)}.neg{color:var(--red)}

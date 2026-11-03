@@ -479,7 +479,8 @@ function renderDds() {
   const byCh = c => sum(base.filter(r => r.channel === c), 'amount');
   $('#ddsKpis').innerHTML = kpi('Всего расходов', fmt(sum(base, 'amount')), `${base.length} записей`, 'hl') +
     CHANNELS.map(c => kpi(c, fmt(byCh(c)))).join('') +
-    kpi('Постоянные / переменные', `${fmtN(sum(base.filter(r => r.kind === 'Постоянный'), 'amount'))} / ${fmtN(sum(base.filter(r => r.kind !== 'Постоянный'), 'amount'))}`);
+    kpi('Постоянные', fmt(sum(base.filter(r => r.kind === 'Постоянный'), 'amount'))) +
+    kpi('Переменные', fmt(sum(base.filter(r => r.kind !== 'Постоянный'), 'amount')));
   $('#ddsTable').innerHTML = rows.length ? `<thead><tr><th>Дата</th><th>Канал</th><th>Вид</th><th>Статья</th><th>Контрагент</th><th>Оплата</th><th>Назначение</th><th class="n">Сумма</th><th></th></tr></thead><tbody>` +
     rows.map(r => `<tr class="${trash ? 'del' : ''}"><td>${ruDate(r.date)}</td><td><span class="tag">${esc(r.channel)}</span></td><td>${esc(r.kind)}</td>
       <td>${esc(r.item)}</td><td>${esc(r.counterparty)}</td><td>${esc(r.payment)}</td><td>${esc(r.purpose)}</td><td class="n">${fmt(r.amount)}</td>
