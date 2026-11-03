@@ -95,14 +95,20 @@ export default async (req) => {
   const raw = await req.text();
   const secret = env('META_APP_SECRET');
   if (secret) {
-    if (!validSignature(raw, req.headers.get('x-hub-signature-256'), secret)) return new Response('bad signature', { status: 401 });
+    if (!validSignature(raw, req.headers.get('x-hub-signature-256'), secret)) {
+      console.error('Отклонено: подпись не совпала — проверьте META_APP_SECRET (секрет приложения в Meta)');
+      return new Response('bad signature', { status: 401 });
+    }
   } else if (!verify || url.searchParams.get('key') !== verify) {
+    console.error('Отклонено: не задан META_APP_SECRET в Netlify (а ключа ?key= в адресе нет)');
     return new Response('forbidden', { status: 403 });
   }
 
   let body;
   try { body = JSON.parse(raw); } catch { return new Response('ok'); }
   const leads = extractLeads(body);
+  console.log(`Получено сообщений: ${leads.length}`);
+  if (!env('SERVER_KEY')) console.error('Не задан SERVER_KEY в Netlify');
   const api = env('APPS_SCRIPT_URL') || DEFAULT_API;
   const key = env('SERVER_KEY');
 
@@ -121,6 +127,7 @@ export default async (req) => {
       });
       const j = await r.json().catch(() => ({}));
       if (!j.ok) { failed++; console.error('Apps Script:', JSON.stringify(j)); }
+      else console.log('Лид записан:', JSON.stringify(j));
     } catch (e) { failed++; console.error('Apps Script недоступен:', e.message); }
   }
   // 200 — принято; при ошибке отвечаем 500, и Meta повторит доставку позже (дубли лидов не создаются)
