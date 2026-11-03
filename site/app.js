@@ -578,10 +578,11 @@ function renderOpt() {
 }
 
 /* ================= Фуры ================= */
+const usd = n => '$' + (Math.round(n * 100) / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 const truckForm = $('#truckForm');
 function extraRow(n = '', v = '') {
   const d = document.createElement('div'); d.className = 'extra-row';
-  d.innerHTML = `<input placeholder="Статья" value="${esc(n)}"><input type="number" step="any" placeholder="Сумма, ₸" value="${esc(v)}"><button type="button" class="icon-btn">✕</button>`;
+  d.innerHTML = `<input placeholder="Статья" value="${esc(n)}"><input type="number" step="any" placeholder="Сумма, $" value="${esc(v)}"><button type="button" class="icon-btn">✕</button>`;
   d.querySelector('button').onclick = () => d.remove(); $('#extraList').appendChild(d);
 }
 $('#extraAdd').addEventListener('click', () => extraRow());
@@ -612,17 +613,17 @@ function renderTrucks() {
   const ex = r => sum(extras(r), 'amount');
   const tot = r => r.goodsSum + r.driver + num(r.customs) + r.border + ex(r);
   $('#truckKpis').innerHTML = kpi('Фур', fmtN(list.length), `не оплачено: ${list.filter(r => r.payStatus !== 'Оплачено').length}`) +
-    kpi('Оплата за товар', fmt(sum(list, 'goodsSum'))) + kpi('Оплата водителю', fmt(sum(list, 'driver'))) + kpi('Растаможка', fmt(sum(list, 'customs'))) +
-    kpi('Китайцам на границе', fmt(sum(list, 'border'))) + kpi('Доп. расходы', fmt(sum(list, ex))) + kpi('Итого по фурам', fmt(sum(list, tot)), '', 'hl');
+    kpi('Оплата за товар', usd(sum(list, 'goodsSum'))) + kpi('Оплата водителю', usd(sum(list, 'driver'))) + kpi('Растаможка', usd(sum(list, 'customs'))) +
+    kpi('Китайцам на границе', usd(sum(list, 'border'))) + kpi('Доп. расходы', usd(sum(list, ex))) + kpi('Итого по фурам', usd(sum(list, tot)), '', 'hl');
   $('#truckList').innerHTML = list.length ? list.map(r => {
     const st = r.payStatus === 'Оплачено' ? 'paid' : r.payStatus === 'Частично' ? 'part' : 'warn';
     return `<div class="truck"><div class="t-head"><div><div class="t-name">🚛 ${esc(r.truck)}</div><div class="t-meta">${ruDate(r.date)}${r.contract ? ' · контракт ' + esc(r.contract) : ''}</div></div>
       <div><span class="tag ${st}">${esc(r.payStatus || 'Не оплачено')}</span>
       <button class="icon-btn" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}">🗑</button></div></div>
       ${r.goods ? `<div class="goods">${esc(r.goods)}</div>` : ''}
-      <dl><dt>Оплата за товар</dt><dd>${fmt(r.goodsSum)}</dd><dt>Оплата водителю</dt><dd>${fmt(r.driver)}</dd><dt>Растаможка</dt><dd>${fmt(num(r.customs))}</dd><dt>Китайцам на границе</dt><dd>${fmt(r.border)}</dd>
-      ${extras(r).map(x => `<dt>${esc(x.name)}</dt><dd>${fmt(x.amount)}</dd>`).join('')}
-      <dt class="total">Итого</dt><dd class="total">${fmt(tot(r))}</dd></dl>${r.note ? `<div class="t-meta" style="margin-top:8px">${esc(r.note)}</div>` : ''}</div>`;
+      <dl><dt>Оплата за товар</dt><dd>${usd(r.goodsSum)}</dd><dt>Оплата водителю</dt><dd>${usd(r.driver)}</dd><dt>Растаможка</dt><dd>${usd(num(r.customs))}</dd><dt>Китайцам на границе</dt><dd>${usd(r.border)}</dd>
+      ${extras(r).map(x => `<dt>${esc(x.name)}</dt><dd>${usd(x.amount)}</dd>`).join('')}
+      <dt class="total">Итого</dt><dd class="total">${usd(tot(r))}</dd></dl>${r.note ? `<div class="t-meta" style="margin-top:8px">${esc(r.note)}</div>` : ''}</div>`;
   }).join('') : '<div class="card empty">Фур пока нет</div>';
 }
 
