@@ -94,12 +94,15 @@ export default async (req) => {
 
   const raw = await req.text();
   const secret = env('META_APP_SECRET');
-  if (secret) {
+  const keyOk = verify && url.searchParams.get('key') === verify;   // партнёр Meta (360dialog) шлёт без подписи, с ?key=
+  if (keyOk) {
+    // ок
+  } else if (secret) {
     if (!validSignature(raw, req.headers.get('x-hub-signature-256'), secret)) {
       console.error('Отклонено: подпись не совпала — проверьте META_APP_SECRET (секрет приложения в Meta)');
       return new Response('bad signature', { status: 401 });
     }
-  } else if (!verify || url.searchParams.get('key') !== verify) {
+  } else {
     console.error('Отклонено: не задан META_APP_SECRET в Netlify (а ключа ?key= в адресе нет)');
     return new Response('forbidden', { status: 403 });
   }
