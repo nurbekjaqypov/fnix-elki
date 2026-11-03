@@ -95,6 +95,11 @@ input[type=date]{color-scheme:dark}
 .inline-form input{width:200px}
 .extra-head{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .extra-row{display:grid;grid-template-columns:2fr 1fr auto;gap:8px;margin-bottom:8px}
+.goods-row{display:grid;grid-template-columns:3fr 1fr auto;gap:8px;margin-bottom:8px}
+.goods-total{margin-left:auto;color:var(--gold2)}
+.truck table.goods-t{margin-top:10px;font-size:13px;background:rgba(4,14,24,.4);border-radius:10px;overflow:hidden}
+.truck table.goods-t td{padding:6px 10px}
+.truck table.goods-t tr.sum td{font-weight:700;border-top:1px solid var(--line)}
 
 /* kpis */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}

@@ -207,7 +207,10 @@
       <label>Оплата водителю, $<input name="driver" type="number" step="any" min="0"></label>
       <label>Растаможка, $<input name="customs" type="number" step="any" min="0"></label>
       <label>Китайцам на границе, $<input name="border" type="number" step="any" min="0"></label>
-      <label class="wide">Товары (модель — количество, по строке)<textarea name="goods" rows="3"></textarea></label>
+      <div class="wide">
+        <div class="extra-head">Товары <button type="button" class="btn ghost sm" id="goodsAdd">+ модель</button><span id="goodsTotal" class="goods-total"></span></div>
+        <div id="goodsList"></div>
+      </div>
       <div class="wide">
         <div class="extra-head">Доп. расходы <button type="button" class="btn ghost sm" id="extraAdd">+ добавить</button></div>
         <div id="extraList"></div>
