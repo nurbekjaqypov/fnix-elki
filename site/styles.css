@@ -169,3 +169,6 @@ table.pnl tr.sub td:first-child{padding-left:24px;color:var(--muted)}
   .kpi .v{font-size:16px}
   .search{max-width:none;flex:1}
 }
+.store-sel{width:auto;min-width:170px;padding:9px 32px 9px 12px;border-radius:12px;font-weight:600;appearance:none;-webkit-appearance:none;cursor:pointer;
+  background:rgba(4,14,24,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23e8c26b' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center}
+.store-sel option{background:#0d2236}

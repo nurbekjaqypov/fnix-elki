@@ -3,7 +3,9 @@
 'use strict';
 const CFG = window.CONFIG || {};
 const COMM = CFG.KASPI_COMMISSION ?? 0.12;
-const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', opt: 'Опт', trucks: 'Фуры' };
+const TAX = CFG.TAX_RATE ?? 0.03;
+const TAXL = 'Налог ' + +(TAX * 100).toFixed(2) + '%';
+const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', stores: 'Магазины', opt: 'Опт', trucks: 'Фуры' };
 const NUMS = ['amount', 'cost', 'sum', 'qty', 'logistics', 'goodsSum', 'driver', 'border'];
 const LS = { state: 'fnix_state', outbox: 'fnix_outbox', pin: 'fnix_pin', period: 'fnix_period' };
 const CHANNELS = ['Kaspi', 'Опт', 'WB', 'Общее'];
@@ -25,7 +27,7 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JS
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
 
 /* ================= Хранилище ================= */
-let S = { dds: [], cost: [], map: [], kaspi: [], opt: [], trucks: [] };
+let S = { dds: [], cost: [], map: [], kaspi: [], stores: [], opt: [], trucks: [] };
 let outbox = lsGet(LS.outbox, []);
 let pin = lsGet(LS.pin, '');
 const remote = !!CFG.API_URL;
@@ -62,10 +64,16 @@ async function flush() {
   if (!remote || flushing || !outbox.length) return syncStatus();
   flushing = true; syncStatus();
   try {
-    while (outbox.length) {
-      await api(outbox[0]);
-      outbox.shift(); persist(); syncStatus();
+    let i = 0, failed = 0;
+    while (i < outbox.length) {
+      try { await api(outbox[i]); outbox.splice(i, 1); persist(); syncStatus(); }
+      catch (e) {
+        if (e instanceof TypeError) throw e;          // нет сети — пробуем позже
+        if (String(e.message) === 'pin') throw e;
+        i++; failed++;                                // ошибка на сервере — не блокируем остальные
+      }
     }
+    if (failed) setTimeout(flush, 60000);
   } catch (e) {
     if (String(e.message) === 'pin') { lsSet(LS.pin, ''); showLogin('ПИН изменился, войдите заново'); }
     setTimeout(flush, 15000);
@@ -90,11 +98,16 @@ function del(key, ids) {
 async function loadRemote() {
   setSync('busy', 'Загрузка…');
   await flush();
-  if (outbox.length) return;
   const res = await fetch(CFG.API_URL + '?pin=' + encodeURIComponent(pin));
   const j = await res.json();
   if (!j.ok) { if (j.error === 'pin') { lsSet(LS.pin, ''); showLogin('Неверный ПИН'); return false; } throw new Error(j.error); }
   Object.entries(SHEETS).forEach(([k, name]) => { S[k] = normalize(k, j.data[name]); });
+  const keyOf = Object.fromEntries(Object.entries(SHEETS).map(([k, n]) => [n, k]));
+  outbox.forEach(op => {   // не потерять то, что ещё не дошло до Google
+    const k = keyOf[op.sheet]; if (!k) return;
+    if (op.action === 'upsert') { const idx = new Map(S[k].map((r, i) => [r.id, i])); normalize(k, op.rows).forEach(r => idx.has(r.id) ? S[k][idx.get(r.id)] = r : S[k].push(r)); }
+    else if (op.action === 'delete') { const set = new Set(op.ids); if (k === 'dds') S.dds.forEach(r => { if (set.has(r.id)) r.deleted = r.deleted || nowIso(); }); else S[k] = S[k].filter(r => !set.has(r.id)); }
+  });
   persist(); syncStatus(); render();
   return true;
 }
@@ -129,11 +142,12 @@ function mapIndex() { const m = new Map(); S.map.forEach(r => { if (r.name) m.se
 function costIndex() { const m = new Map(); S.cost.forEach(r => m.set(String(r.name).trim().toLowerCase(), num(r.cost))); return m; }
 function costOf(ci, name) { return name ? ci.get(String(name).trim().toLowerCase()) : undefined; }
 
-function kaspiCalc(periodKey, seg) {
+function kaspiCalc(periodKey, seg, store = 'all') {
   const mi = mapIndex(), ci = costIndex();
-  const out = { rev: 0, comm: 0, log: 0, cogs: 0, qty: 0, orders: 0, cancel: 0, ret: 0, noCost: 0, rows: [] };
+  const out = { rev: 0, comm: 0, log: 0, cogs: 0, tax: 0, qty: 0, orders: 0, cancel: 0, ret: 0, noCost: 0, rows: [] };
   S.kaspi.forEach(r => {
     if (!inP(r.date, periodKey)) return;
+    if (store !== 'all' && (r.store || '') !== store) return;
     const fn = isFnix(r.kaspi);
     if (seg === 'fnix' && !fn) return;
     if (seg === 'other' && fn) return;
@@ -142,19 +156,19 @@ function kaspiCalc(periodKey, seg) {
     if (r.status !== 'Выдан') return;
     const name = mi.get(r.kaspi);
     const unit = costOf(ci, name);
-    const x = { ...r, fnix: fn, name, unit, comm: r.sum * COMM, cogs: (unit || 0) * r.qty };
-    x.profit = r.sum - x.comm - r.logistics - x.cogs;
+    const x = { ...r, fnix: fn, name, unit, comm: r.sum * COMM, tax: r.sum * TAX, cogs: (unit || 0) * r.qty };
+    x.profit = r.sum - x.comm - r.logistics - x.cogs - x.tax;
     if (unit === undefined) out.noCost += r.qty;
-    out.rev += r.sum; out.comm += x.comm; out.log += r.logistics; out.cogs += x.cogs; out.qty += r.qty; out.orders++;
+    out.rev += r.sum; out.comm += x.comm; out.log += r.logistics; out.cogs += x.cogs; out.tax += x.tax; out.qty += r.qty; out.orders++;
     out.rows.push(x);
   });
-  out.profit = out.rev - out.comm - out.log - out.cogs;
+  out.profit = out.rev - out.comm - out.log - out.cogs - out.tax;
   return out;
 }
 function optCalc(periodKey) {
   const ci = costIndex();
-  const rows = S.opt.filter(r => inP(r.date, periodKey)).map(r => { const unit = costOf(ci, r.model); return { ...r, unit, cogs: (unit || 0) * r.qty, profit: r.sum - (unit || 0) * r.qty }; });
-  return { rows, rev: sum(rows, 'sum'), cogs: sum(rows, 'cogs'), qty: sum(rows, 'qty'), profit: sum(rows, 'profit'), noCost: rows.filter(r => r.unit === undefined).length };
+  const rows = S.opt.filter(r => inP(r.date, periodKey)).map(r => { const unit = costOf(ci, r.model); return { ...r, unit, cogs: (unit || 0) * r.qty, tax: r.sum * TAX, profit: r.sum - (unit || 0) * r.qty - r.sum * TAX }; });
+  return { rows, rev: sum(rows, 'sum'), cogs: sum(rows, 'cogs'), tax: sum(rows, 'tax'), qty: sum(rows, 'qty'), profit: sum(rows, 'profit'), noCost: rows.filter(r => r.unit === undefined).length };
 }
 const sum = (a, k) => a.reduce((s, r) => s + num(typeof k === 'function' ? k(r) : r[k]), 0);
 const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
@@ -184,9 +198,11 @@ $('#kaspiFile').addEventListener('change', async e => {
     const col = n => h.indexOf(n);
     const c = { order: col('№ заказа'), date: col('Дата поступления заказа'), kaspi: col('Название товара в Kaspi Магазине'),
       seller: col('Название в системе продавца'), sku: col('Артикул'), sum: col('Сумма'), cat: col('Категория'), city: col('Адрес самовывоза/доставки'),
-      status: col('Статус'), qty: col('Количество'), log: col('Стоимость доставки для продавца') };
+      status: col('Статус'), qty: col('Количество'), log: col('Стоимость доставки для продавца'), wh: col('Склад передачи КД') };
     if (c.log < 0) c.log = 23; // столбец X
     if (c.order < 0 || c.kaspi < 0 || c.sum < 0) throw new Error('Не похоже на архив заказов Kaspi');
+    const store = pickStore(aoa.slice(1), c.wh, f.name);
+    if (!store) return;
     const rows = [];
     aoa.slice(1).forEach(r => {
       if (!r[c.order]) return;
@@ -196,12 +212,51 @@ $('#kaspiFile').addEventListener('change', async e => {
       if (c.seller >= 0 && r[c.seller]) lastHints[kaspi] = String(r[c.seller]).trim();
       rows.push({ id: String(r[c.order]) + '_' + String(r[c.sku] || ''), order: String(r[c.order]), date: m ? `${m[3]}-${m[2]}-${m[1]}` : d.slice(0, 10),
         kaspi, sku: String(r[c.sku] || ''), sum: num(r[c.sum]), qty: num(r[c.qty]) || 1, status: String(r[c.status]).trim(),
-        logistics: num(r[c.log]), city: String(r[c.city] || '').replace(/^г\.\s*/, '') });
+        logistics: num(r[c.log]), city: String(r[c.city] || '').replace(/^г\.\s*/, ''), store: store.id });
     });
     if (!rows.length) throw new Error('В файле нет заказов категории «' + CFG.TREE_CATEGORY + '»');
     put('kaspi', rows);
-    toast(`Загружено заказов ёлок: ${rows.length}`);
+    toast(`${store.name}: загружено заказов ёлок ${rows.length}`);
   } catch (err) { toast('Ошибка: ' + err.message); }
+});
+
+// Магазин определяется по ID продавца в столбце «Склад передачи КД» (например 30383279_PP2)
+function pickStore(rows, whCol, fileName) {
+  let mid = '';
+  if (whCol >= 0) {
+    const cnt = {};
+    rows.forEach(r => { const m = String(r[whCol] || '').match(/^(\d{5,})_/); if (m) cnt[m[1]] = (cnt[m[1]] || 0) + 1; });
+    mid = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] || '';
+  }
+  let st = mid && S.stores.find(x => String(x.mid) === mid);
+  if (st) return st;
+  const known = S.stores.map(x => x.name).join(', ');
+  const name = (prompt(`Новый Kaspi магазин${mid ? ' (ID ' + mid + ')' : ''}.\nКак его назвать?` + (known ? `\n\nУже есть: ${known}\nЕсли это один из них — впишите точно так же.` : ''), '') || '').trim();
+  if (!name) { toast('Загрузка отменена: не указан магазин'); return null; }
+  st = S.stores.find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (st) { if (mid && !st.mid) put('stores', [{ ...st, mid }], true); return st; }
+  st = { id: 's_' + (mid || hash(name)), mid, name };
+  put('stores', [st], true);
+  return st;
+}
+const storeName = id => (S.stores.find(x => x.id === id) || {}).name || 'Магазин не указан';
+function fillStoreSelect(sel) {
+  const v = sel.value || 'all';
+  const ids = [...new Set(S.kaspi.map(r => r.store || ''))];
+  const opts = [['all', 'Все магазины'], ...S.stores.filter(x => ids.includes(x.id)).map(x => [x.id, x.name])];
+  if (ids.includes('')) opts.push(['', 'Магазин не указан']);
+  sel.innerHTML = opts.map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
+  sel.value = opts.some(o => o[0] === v) ? v : 'all';
+  sel.classList.toggle('hidden', opts.length <= 2 && !ids.includes(''));
+  return sel.value;
+}
+$('#kaspiStore').addEventListener('change', render);
+$('#pnlStore').addEventListener('change', render);
+$('#kaspiStores').addEventListener('click', e => {
+  const b = e.target.closest('[data-rename]'); if (!b) return;
+  const st = S.stores.find(x => x.id === b.dataset.rename); if (!st) return;
+  const name = (prompt('Новое название магазина', st.name) || '').trim();
+  if (name && name !== st.name) put('stores', [{ ...st, name }]);
 });
 
 function unmappedNames() {
@@ -238,15 +293,19 @@ $('#tplFile').addEventListener('change', async e => {
   } catch (err) { toast('Ошибка: ' + err.message); }
 });
 $('#kaspiClear').addEventListener('click', () => {
-  if (!S.kaspi.length) return;
-  if (!confirm(`Удалить из системы весь архив Kaspi (${S.kaspi.length} строк)? ДДС, себестоимость и сопоставления останутся.`)) return;
-  del('kaspi', S.kaspi.map(r => r.id)); toast('Архив очищен');
+  const st = $('#kaspiStore').value;
+  const rows = st === 'all' ? S.kaspi : S.kaspi.filter(r => (r.store || '') === st);
+  if (!rows.length) return;
+  const what = st === 'all' ? 'весь архив Kaspi всех магазинов' : `архив магазина «${storeName(st)}»`;
+  if (!confirm(`Удалить ${what} (${rows.length} строк)? ДДС, себестоимость и сопоставления останутся.`)) return;
+  del('kaspi', rows.map(r => r.id)); toast('Архив очищен');
 });
 $('#mapAlert').addEventListener('click', e => { if (e.target.closest('[data-tpl]')) downloadTemplate(); });
 
 function renderKaspi() {
   const seg = segVal($('#kaspiSeg'));
-  const k = kaspiCalc('kaspi', seg);
+  const st = fillStoreSelect($('#kaspiStore'));
+  const k = kaspiCalc('kaspi', seg, st);
   const um = unmappedNames();
   const al = $('#mapAlert');
   if (um.length) { al.classList.remove('hidden'); al.innerHTML = `<span>⚠️ ${um.length} карточек Kaspi без нашего наименования — их себестоимость не посчитается.</span><button class="btn gold sm" data-tpl>Скачать шаблон</button>`; }
@@ -257,6 +316,7 @@ function renderKaspi() {
     kpi('Kaspi 12%', fmt(k.comm)) +
     kpi('Логистика', fmt(k.log)) +
     kpi('Себестоимость', fmt(k.cogs), k.noCost ? `<span class="neg">без себестоимости: ${fmtN(k.noCost)} шт</span>` : '') +
+    kpi(TAXL, fmt(k.tax), 'упрощёнка, с выручки') +
     kpi('Прибыль', sign(k.profit), 'маржа ' + pct(k.profit, k.rev), 'hl') +
     kpi('Отмены / возвраты', `${fmtN(k.cancel)} / ${fmtN(k.ret)}`);
 
@@ -268,30 +328,42 @@ function renderKaspi() {
     { label: 'Выручка', data: dk.map(d => days[d].rev), backgroundColor: 'rgba(232,194,107,.55)', borderRadius: 4, order: 2 },
     { label: 'Прибыль', data: dk.map(d => days[d].profit), type: 'line', borderColor: '#4cc28a', backgroundColor: '#4cc28a', pointRadius: 0, tension: .3, order: 1 }] }, options: chartOpts });
 
-  const f = kaspiCalc('kaspi', 'fnix'), o = kaspiCalc('kaspi', 'other');
+  const f = kaspiCalc('kaspi', 'fnix', st), o = kaspiCalc('kaspi', 'other', st);
   $('#kaspiSplit').innerHTML = `<div class="split">
     <div></div><div class="h n"><span class="tag fnix">FNIX</span></div><div class="h n"><span class="tag">Общие</span></div>
     <div class="h">Выручка</div><div class="n">${fmt(f.rev)}</div><div class="n">${fmt(o.rev)}</div>
     <div class="h">Продано, шт</div><div class="n">${fmtN(f.qty)}</div><div class="n">${fmtN(o.qty)}</div>
     <div class="h">Kaspi + логистика</div><div class="n">${fmt(f.comm + f.log)}</div><div class="n">${fmt(o.comm + o.log)}</div>
     <div class="h">Себестоимость</div><div class="n">${fmt(f.cogs)}</div><div class="n">${fmt(o.cogs)}</div>
+    <div class="h">${TAXL}</div><div class="n">${fmt(f.tax)}</div><div class="n">${fmt(o.tax)}</div>
     <div class="h">Прибыль</div><div class="n">${sign(f.profit)}</div><div class="n">${sign(o.profit)}</div>
     <div class="h">Маржа</div><div class="n">${pct(f.profit, f.rev)}</div><div class="n">${pct(o.profit, o.rev)}</div>
     <div class="h">Доля выручки</div><div class="n">${pct(f.rev, f.rev + o.rev)}</div><div class="n">${pct(o.rev, f.rev + o.rev)}</div></div>`;
+
+  // по магазинам
+  const sids = [...new Set(S.kaspi.map(r => r.store || ''))];
+  const card = $('#kaspiStoresCard');
+  card.classList.toggle('hidden', sids.length < 2);
+  const per = sids.map(id => ({ id, ...kaspiCalc('kaspi', seg, id) })).sort((a, b) => b.rev - a.rev);
+  const tr = per.reduce((s, x) => s + x.rev, 0);
+  $('#kaspiStores').innerHTML = `<thead><tr><th>Магазин</th><th class="n">Шт</th><th class="n">Выручка</th><th class="n">Доля</th><th class="n">Kaspi + логистика</th><th class="n">Себестоимость</th><th class="n">${TAXL}</th><th class="n">Прибыль</th><th class="n">Маржа</th><th></th></tr></thead><tbody>` +
+    per.map(x => `<tr><td>${esc(storeName(x.id))}</td><td class="n">${fmtN(x.qty)}</td><td class="n">${fmt(x.rev)}</td><td class="n">${pct(x.rev, tr)}</td>
+      <td class="n">${fmt(x.comm + x.log)}</td><td class="n">${fmt(x.cogs)}</td><td class="n">${fmt(x.tax)}</td><td class="n">${sign(x.profit)}</td><td class="n">${pct(x.profit, x.rev)}</td>
+      <td class="n">${x.id ? `<button class="icon-btn" data-rename="${esc(x.id)}" title="Переименовать">✎</button>` : ''}</td></tr>`).join('') + '</tbody>';
 
   // по товарам
   const g = {};
   k.rows.forEach(r => {
     const key = r.name || r.kaspi;
-    const x = g[key] ||= { name: key, mapped: !!r.name, fnix: r.fnix, unit: r.unit, qty: 0, rev: 0, comm: 0, log: 0, cogs: 0, profit: 0 };
-    x.qty += r.qty; x.rev += r.sum; x.comm += r.comm; x.log += r.logistics; x.cogs += r.cogs; x.profit += r.profit;
+    const x = g[key] ||= { name: key, mapped: !!r.name, fnix: r.fnix, unit: r.unit, qty: 0, rev: 0, comm: 0, log: 0, cogs: 0, tax: 0, profit: 0 };
+    x.qty += r.qty; x.rev += r.sum; x.comm += r.comm; x.log += r.logistics; x.cogs += r.cogs; x.tax += r.tax; x.profit += r.profit;
   });
   const list = Object.values(g).sort((a, b) => b.rev - a.rev);
-  $('#kaspiTable').innerHTML = list.length ? `<thead><tr><th>Наименование</th><th>Тип</th><th class="n">Шт</th><th class="n">Выручка</th><th class="n">Kaspi 12%</th><th class="n">Логистика</th><th class="n">Себест. ед.</th><th class="n">Себестоимость</th><th class="n">Прибыль</th><th class="n">Маржа</th></tr></thead><tbody>` +
+  $('#kaspiTable').innerHTML = list.length ? `<thead><tr><th>Наименование</th><th>Тип</th><th class="n">Шт</th><th class="n">Выручка</th><th class="n">Kaspi 12%</th><th class="n">Логистика</th><th class="n">Себест. ед.</th><th class="n">Себестоимость</th><th class="n">${TAXL}</th><th class="n">Прибыль</th><th class="n">Маржа</th></tr></thead><tbody>` +
     list.map(x => `<tr><td>${esc(x.name)} ${x.mapped ? '' : '<span class="tag warn">нет сопоставления</span>'}</td>
       <td><span class="tag ${x.fnix ? 'fnix' : ''}">${x.fnix ? 'FNIX' : 'Общая'}</span></td>
       <td class="n">${fmtN(x.qty)}</td><td class="n">${fmt(x.rev)}</td><td class="n">${fmt(x.comm)}</td><td class="n">${fmt(x.log)}</td>
-      <td class="n">${x.unit === undefined ? '<span class="tag warn">нет</span>' : fmt(x.unit)}</td><td class="n">${fmt(x.cogs)}</td>
+      <td class="n">${x.unit === undefined ? '<span class="tag warn">нет</span>' : fmt(x.unit)}</td><td class="n">${fmt(x.cogs)}</td><td class="n">${fmt(x.tax)}</td>
       <td class="n">${sign(x.profit)}</td><td class="n">${pct(x.profit, x.rev)}</td></tr>`).join('') + '</tbody>'
     : `<tr><td class="empty">Загрузите архив заказов Kaspi (.xlsx)</td></tr>`;
 }
@@ -418,8 +490,8 @@ function renderDds() {
 }
 
 /* ================= ОПиУ ================= */
-function pnlFor(periodKey, seg) {
-  const k = kaspiCalc(periodKey, seg), o = optCalc(periodKey), d = ddsInPeriod(periodKey);
+function pnlFor(periodKey, seg, store = 'all') {
+  const k = kaspiCalc(periodKey, seg, store), o = optCalc(periodKey), d = ddsInPeriod(periodKey);
   const exp = (ch, kind) => sum(d.filter(r => r.channel === ch && (kind === 'Постоянный' ? r.kind === 'Постоянный' : r.kind !== 'Постоянный')), 'amount');
   const col = {
     Kaspi: { rev: k.rev, comm: k.comm, log: k.log, cogs: k.cogs },
@@ -427,17 +499,19 @@ function pnlFor(periodKey, seg) {
     WB: { rev: 0, comm: 0, log: 0, cogs: 0 },
     'Общее': { rev: 0, comm: 0, log: 0, cogs: 0 }
   };
-  CHANNELS.forEach(c => { const x = col[c]; x.gross = x.rev - x.comm - x.log - x.cogs; x.vari = exp(c, 'Переменный'); x.fixed = exp(c, 'Постоянный'); x.net = x.gross - x.vari - x.fixed; });
-  const tot = {}; ['rev', 'comm', 'log', 'cogs', 'gross', 'vari', 'fixed', 'net'].forEach(f => tot[f] = CHANNELS.reduce((s, c) => s + col[c][f], 0));
+  CHANNELS.forEach(c => { const x = col[c]; x.gross = x.rev - x.comm - x.log - x.cogs; x.vari = exp(c, 'Переменный'); x.fixed = exp(c, 'Постоянный');
+    x.ebt = x.gross - x.vari - x.fixed; x.tax = x.rev * TAX; x.net = x.ebt - x.tax; });
+  const tot = {}; ['rev', 'comm', 'log', 'cogs', 'gross', 'vari', 'fixed', 'ebt', 'tax', 'net'].forEach(f => tot[f] = CHANNELS.reduce((s, c) => s + col[c][f], 0));
   col['Итого'] = tot;
   return { col, k, o, d };
 }
 function renderPnl() {
   const seg = segVal($('#pnlSeg'));
-  const { col, k, d } = pnlFor('pnl', seg);
+  const st = fillStoreSelect($('#pnlStore'));
+  const { col, k, d } = pnlFor('pnl', seg, st);
   const t = col['Итого'];
   $('#pnlKpis').innerHTML = kpi('Выручка', fmt(t.rev)) + kpi('Валовая прибыль', sign(t.gross), 'маржа ' + pct(t.gross, t.rev)) +
-    kpi('Расходы ДДС', fmt(t.vari + t.fixed)) + kpi('Чистая прибыль', sign(t.net), 'рентабельность ' + pct(t.net, t.rev), 'hl');
+    kpi('Расходы ДДС', fmt(t.vari + t.fixed)) + kpi(TAXL, fmt(t.tax), 'упрощёнка, с выручки') + kpi('Чистая прибыль', sign(t.net), 'рентабельность ' + pct(t.net, t.rev), 'hl');
   const cols = [...CHANNELS, 'Итого'];
   const line = (label, f, cls = '', neg = false) => `<tr class="${cls}"><td>${label}</td>${cols.map(c => `<td class="n">${cls === 'sum' ? sign(col[c][f]) : (col[c][f] ? (neg ? '−' : '') + fmt(col[c][f]) : '—')}</td>`).join('')}</tr>`;
   const pline = (label, f) => `<tr class="sub"><td>${label}</td>${cols.map(c => `<td class="n">${pct(col[c][f], col[c].rev)}</td>`).join('')}</tr>`;
@@ -445,6 +519,7 @@ function renderPnl() {
     line('Выручка', 'rev') + line('Комиссия Kaspi 12%', 'comm', 'sub', true) + line('Логистика Kaspi', 'log', 'sub', true) + line('Себестоимость', 'cogs', 'sub', true) +
     line('Валовая прибыль', 'gross', 'sum') + pline('Валовая маржа', 'gross') +
     line('Переменные расходы', 'vari', 'sub', true) + line('Постоянные расходы', 'fixed', 'sub', true) +
+    line('Прибыль до налога', 'ebt', 'sum') + line(TAXL + ' (упрощёнка, с выручки)', 'tax', 'sub', true) +
     line('Чистая прибыль', 'net', 'sum') + pline('Рентабельность', 'net') + '</tbody>';
   const warn = [];
   if (k.noCost) warn.push(`${fmtN(k.noCost)} шт на Kaspi без себестоимости`);
@@ -459,7 +534,7 @@ function renderPnl() {
     const [y, mo] = m.split('-').map(Number); const last = new Date(y, mo, 0).getDate();
     let from = m + '-01', to = m + '-' + String(last).padStart(2, '0');
     if (saved.from && saved.from > from) from = saved.from; if (saved.to && saved.to < to) to = saved.to;
-    periods._m = { from, to }; const c = pnlFor('_m', seg).col['Итого']; return { m, rev: c.rev, net: c.net };
+    periods._m = { from, to }; const c = pnlFor('_m', seg, st).col['Итого']; return { m, rev: c.rev, net: c.net };
   });
   const mn = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
   chart('pnlChart', { type: 'bar', data: { labels: series.map(s => mn[+s.m.slice(5) - 1] + ' ' + s.m.slice(2, 4)), datasets: [
@@ -492,7 +567,7 @@ $('#optTable').addEventListener('click', e => {
 function renderOpt() {
   const o = optCalc('opt');
   $('#optKpis').innerHTML = kpi('Выручка опт', fmt(o.rev), `${fmtN(o.qty)} шт`) + kpi('Себестоимость', fmt(o.cogs), o.noCost ? `<span class="neg">без себестоимости: ${o.noCost}</span>` : '') +
-    kpi('Валовая прибыль', sign(o.profit), 'маржа ' + pct(o.profit, o.rev), 'hl') + kpi('Покупателей', fmtN(new Set(o.rows.map(r => r.buyer)).size));
+    kpi(TAXL, fmt(o.tax)) + kpi('Прибыль после налога', sign(o.profit), 'маржа ' + pct(o.profit, o.rev), 'hl') + kpi('Покупателей', fmtN(new Set(o.rows.map(r => r.buyer)).size));
   const rows = o.rows.sort((a, b) => b.date.localeCompare(a.date));
   $('#optTable').innerHTML = rows.length ? `<thead><tr><th>Дата</th><th>Покупатель</th><th>Модель</th><th class="n">Шт</th><th class="n">Сумма</th><th class="n">Себестоимость</th><th class="n">Прибыль</th><th>Примечание</th><th></th></tr></thead><tbody>` +
     rows.map(r => `<tr><td>${ruDate(r.date)}</td><td>${esc(r.buyer)}</td><td>${esc(r.model)}</td><td class="n">${fmtN(r.qty)}</td><td class="n">${fmt(r.sum)}</td>

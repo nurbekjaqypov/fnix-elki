@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="theme-color" content="#07121f"><text y='.9em' font-size='90'>🎄</text></svg>">
+<meta name="theme-color" content="#07121f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -60,6 +60,7 @@
 <section id="tab-kaspi" class="tab active">
   <div class="toolbar">
     <label class="btn gold file-btn">Загрузить архив Kaspi<input type="file" id="kaspiFile" accept=".xlsx,.xls"></label>
+    <select id="kaspiStore" class="store-sel hidden"></select>
     <div class="period" data-period="kaspi"></div>
     <div class="seg" id="kaspiSeg">
       <button data-v="all" class="on">Все карточки</button>
@@ -69,6 +70,7 @@
   </div>
   <div id="mapAlert" class="alert hidden"></div>
   <div class="kpis" id="kaspiKpis"></div>
+  <div class="card hidden" id="kaspiStoresCard"><h3>По магазинам</h3><div class="table-wrap"><table id="kaspiStores"></table></div></div>
   <div class="grid2">
     <div class="card"><h3>Выручка и прибыль по дням</h3><div class="chart-box"><canvas id="kaspiChart"></canvas></div></div>
     <div class="card"><h3>FNIX против общих карточек</h3><div id="kaspiSplit"></div></div>
@@ -149,13 +151,14 @@
 <section id="tab-pnl" class="tab">
   <div class="toolbar">
     <div class="period" data-period="pnl"></div>
+    <select id="pnlStore" class="store-sel hidden"></select>
     <div class="seg" id="pnlSeg">
       <button data-v="all" class="on">Kaspi: все</button><button data-v="fnix">Kaspi: FNIX</button><button data-v="other">Kaspi: общие</button>
     </div>
   </div>
   <div class="kpis" id="pnlKpis"></div>
   <div class="card"><h3>Отчёт о прибылях и убытках</h3><div class="table-wrap"><table id="pnlTable" class="pnl"></table></div>
-    <p class="hint">Расходы канала Kaspi из ДДС относятся на весь канал, даже если выбран фильтр FNIX или общие.</p></div>
+    <p class="hint">Расходы канала Kaspi из ДДС относятся на весь канал, даже если выбран отдельный магазин или фильтр FNIX / общие.</p></div>
   <div class="grid2">
     <div class="card"><h3>По месяцам</h3><div class="chart-box"><canvas id="pnlChart"></canvas></div></div>
     <div class="card"><h3>Расходы по статьям</h3><div id="pnlItems"></div></div>
