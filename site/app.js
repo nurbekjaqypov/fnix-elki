@@ -6,7 +6,7 @@ const COMM = CFG.KASPI_COMMISSION ?? 0.12;
 const TAX = CFG.TAX_RATE ?? 0.03;
 const TAXL = 'Налог ' + +(TAX * 100).toFixed(2) + '%';
 const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', stores: 'Магазины', opt: 'Опт', trucks: 'Фуры' };
-const NUMS = ['amount', 'cost', 'sum', 'qty', 'logistics', 'goodsSum', 'driver', 'border'];
+const NUMS = ['amount', 'cost', 'sum', 'qty', 'logistics', 'goodsSum', 'driver', 'customs', 'border'];
 const LS = { state: 'fnix_state', outbox: 'fnix_outbox', pin: 'fnix_pin', period: 'fnix_period' };
 const CHANNELS = ['Kaspi', 'Опт', 'WB', 'Общее'];
 
@@ -594,7 +594,7 @@ truckForm.addEventListener('submit', e => {
   e.preventDefault(); const id = truckForm.dataset.id;
   const extra = $$('.extra-row', truckForm).map(d => { const [a, b] = $$('input', d); return { name: a.value.trim(), amount: num(b.value) }; }).filter(x => x.name || x.amount);
   put('trucks', [{ id: id || uid(), date: truckForm.date.value, truck: truckForm.truck.value.trim(), contract: truckForm.contract.value.trim(), goods: truckForm.goods.value.trim(),
-    goodsSum: num(truckForm.goodsSum.value), payStatus: segVal($('[data-name=payStatus]', truckForm)), driver: num(truckForm.driver.value), border: num(truckForm.border.value),
+    goodsSum: num(truckForm.goodsSum.value), payStatus: segVal($('[data-name=payStatus]', truckForm)), driver: num(truckForm.driver.value), customs: num(truckForm.customs.value), border: num(truckForm.border.value),
     extra: JSON.stringify(extra), note: truckForm.note.value.trim() }]);
   toast(id ? 'Фура изменена' : 'Фура сохранена'); truckReset();
 });
@@ -602,7 +602,7 @@ $('#truckList').addEventListener('click', e => {
   const b = e.target.closest('button[data-act]'); if (!b) return; const r = S.trucks.find(x => x.id === b.dataset.id); if (!r) return;
   if (b.dataset.act === 'edit') {
     truckReset(); truckForm.dataset.id = r.id;
-    ['date', 'truck', 'contract', 'goods', 'goodsSum', 'driver', 'border', 'note'].forEach(k => truckForm[k].value = r[k] || '');
+    ['date', 'truck', 'contract', 'goods', 'goodsSum', 'driver', 'customs', 'border', 'note'].forEach(k => truckForm[k].value = r[k] || '');
     setSeg($('[data-name=payStatus]', truckForm), r.payStatus || 'Не оплачено'); extras(r).forEach(x => extraRow(x.name, x.amount));
     $('#truckFormTitle').textContent = 'Правка фуры'; $('#truckCancel').classList.remove('hidden'); truckForm.scrollIntoView({ behavior: 'smooth' });
   } else if (confirm(`Удалить фуру «${r.truck}»?`)) del('trucks', [r.id]);
@@ -610,9 +610,9 @@ $('#truckList').addEventListener('click', e => {
 function renderTrucks() {
   const list = [...S.trucks].sort((a, b) => b.date.localeCompare(a.date));
   const ex = r => sum(extras(r), 'amount');
-  const tot = r => r.goodsSum + r.driver + r.border + ex(r);
+  const tot = r => r.goodsSum + r.driver + num(r.customs) + r.border + ex(r);
   $('#truckKpis').innerHTML = kpi('Фур', fmtN(list.length), `не оплачено: ${list.filter(r => r.payStatus !== 'Оплачено').length}`) +
-    kpi('Оплата за товар', fmt(sum(list, 'goodsSum'))) + kpi('Растаможка (водителю)', fmt(sum(list, 'driver'))) +
+    kpi('Оплата за товар', fmt(sum(list, 'goodsSum'))) + kpi('Оплата водителю', fmt(sum(list, 'driver'))) + kpi('Растаможка', fmt(sum(list, 'customs'))) +
     kpi('Китайцам на границе', fmt(sum(list, 'border'))) + kpi('Доп. расходы', fmt(sum(list, ex))) + kpi('Итого по фурам', fmt(sum(list, tot)), '', 'hl');
   $('#truckList').innerHTML = list.length ? list.map(r => {
     const st = r.payStatus === 'Оплачено' ? 'paid' : r.payStatus === 'Частично' ? 'part' : 'warn';
@@ -620,7 +620,7 @@ function renderTrucks() {
       <div><span class="tag ${st}">${esc(r.payStatus || 'Не оплачено')}</span>
       <button class="icon-btn" data-act="edit" data-id="${esc(r.id)}">✎</button><button class="icon-btn" data-act="del" data-id="${esc(r.id)}">🗑</button></div></div>
       ${r.goods ? `<div class="goods">${esc(r.goods)}</div>` : ''}
-      <dl><dt>Оплата за товар</dt><dd>${fmt(r.goodsSum)}</dd><dt>Водителю за растаможку</dt><dd>${fmt(r.driver)}</dd><dt>Китайцам на границе</dt><dd>${fmt(r.border)}</dd>
+      <dl><dt>Оплата за товар</dt><dd>${fmt(r.goodsSum)}</dd><dt>Оплата водителю</dt><dd>${fmt(r.driver)}</dd><dt>Растаможка</dt><dd>${fmt(num(r.customs))}</dd><dt>Китайцам на границе</dt><dd>${fmt(r.border)}</dd>
       ${extras(r).map(x => `<dt>${esc(x.name)}</dt><dd>${fmt(x.amount)}</dd>`).join('')}
       <dt class="total">Итого</dt><dd class="total">${fmt(tot(r))}</dd></dl>${r.note ? `<div class="t-meta" style="margin-top:8px">${esc(r.note)}</div>` : ''}</div>`;
   }).join('') : '<div class="card empty">Фур пока нет</div>';
