@@ -205,9 +205,15 @@ $('#kaspiFile').addEventListener('change', async e => {
     const store = pickStore(aoa.slice(1), c.wh, f.name);
     if (!store) return;
     const rows = [];
+    let skipped = 0;
+    // только ёлки: по категории Kaspi, а если её нет — по названию товара
+    const treeRe = /(^|[^а-яё])[её]л(к|оч)/i;
+    const isTreeRow = r => c.cat >= 0 && String(r[c.cat]).trim()
+      ? String(r[c.cat]).trim().toLowerCase().replace(/ё/g, 'е') === String(CFG.TREE_CATEGORY || 'Новогодние елки').toLowerCase().replace(/ё/g, 'е')
+      : treeRe.test(String(r[c.kaspi]));
     aoa.slice(1).forEach(r => {
       if (!r[c.order]) return;
-      if (c.cat >= 0 && CFG.TREE_CATEGORY && String(r[c.cat]).trim() !== CFG.TREE_CATEGORY) return;
+      if (!isTreeRow(r)) { skipped++; return; }
       const d = String(r[c.date]).trim(); const m = d.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
       const kaspi = String(r[c.kaspi]).trim();
       if (c.seller >= 0 && r[c.seller]) lastHints[kaspi] = String(r[c.seller]).trim();
@@ -217,7 +223,7 @@ $('#kaspiFile').addEventListener('change', async e => {
     });
     if (!rows.length) throw new Error('В файле нет заказов категории «' + CFG.TREE_CATEGORY + '»');
     put('kaspi', rows);
-    toast(`${store.name}: загружено заказов ёлок ${rows.length}`);
+    toast(`${store.name}: загружено заказов ёлок ${rows.length}` + (skipped ? ` · других товаров убрано ${skipped}` : ''));
   } catch (err) { toast('Ошибка: ' + err.message); }
 });
 

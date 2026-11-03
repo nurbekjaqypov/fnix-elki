@@ -91,12 +91,20 @@ function cols_(name, extra) {
   var add = [];
   (extra || []).forEach(function (k) { if (keys.indexOf(k) < 0 && add.indexOf(k) < 0) add.push(k); });
   if (add.length) {
+    ensureSize_(sh, 1, keys.length + add.length);
     sh.getRange(1, keys.length + 1, 1, add.length)
       .setValues([add.map(function (k) { return keyToTitle[k] || k; })])
       .setFontWeight('bold').setBackground('#0f3d2e').setFontColor('#ffffff');
     keys = keys.concat(add);
   }
   return { sh: sh, keys: keys };
+}
+
+// Лист не растёт сам при записи через getRange — добавляем строки и колонки заранее
+function ensureSize_(sh, rows, cols) {
+  var mr = sh.getMaxRows(), mc = sh.getMaxColumns();
+  if (rows > mr) sh.insertRowsAfter(mr, rows - mr + 500);
+  if (cols > mc) sh.insertColumnsAfter(mc, cols - mc + 5);
 }
 
 function json_(o) {
@@ -187,7 +195,10 @@ function upsert_(name, list) {
     }
   });
   if (changed) sh.getRange(2, 1, data.length, width).setValues(data);
-  if (append.length) sh.getRange(n + 2, 1, append.length, width).setValues(append);
+  if (append.length) {
+    ensureSize_(sh, n + 1 + append.length, width);
+    sh.getRange(n + 2, 1, append.length, width).setValues(append);
+  }
   if (hist.length) log_(hist);
   return { ok: true, count: list.length };
 }
@@ -225,6 +236,7 @@ function remove_(name, ids) {
 
 function log_(rows) {
   var sh = sheet_(HISTORY);
+  ensureSize_(sh, sh.getLastRow() + rows.length, 4);
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
 }
 
