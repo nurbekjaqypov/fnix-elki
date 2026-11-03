@@ -30,7 +30,8 @@ var SCHEMA = {
             ['store','Магазин']],
   'Лиды': [['id','ID'],['created','Создано'],['name','Имя'],['phone','Телефон'],['city','Город'],['source','Источник / кампания'],
            ['stage','Этап'],['next','Следующий контакт'],['note','Последний комментарий'],['lost','Причина отказа'],
-           ['sale','ID продажи'],['log','История'],['updated','Изменено'],['by','Кто изменил']],
+           ['sale','ID продажи'],['log','История'],['updated','Изменено'],['by','Кто изменил'],
+           ['adId','ID объявления'],['adUrl','Ссылка на рекламу'],['ctwa','ctwa_clid']],
   'Магазины': [['id','ID'],['mid','ID магазина в Kaspi'],['name','Название']],
   'Опт': [['id','ID'],['date','Дата'],['buyer','Покупатель'],['model','Модель'],['qty','Кол-во'],['sum','Сумма'],
           ['note','Примечание'],['created','Создано']],
@@ -60,12 +61,18 @@ function setup() {
     do { mpin = String(Math.floor(100000 + Math.random() * 900000)); } while (mpin === pin);
     props.setProperty('MANAGER_PIN', mpin);
   }
+  var skey = props.getProperty('SERVER_KEY');
+  if (!skey) {
+    skey = Utilities.getUuid().replace(/-/g, '');
+    props.setProperty('SERVER_KEY', skey);
+  }
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'dailyBackup') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(3).create();
   Logger.log('Готово. Ваш ПИН (полный доступ): ' + pin);
   Logger.log('ПИН менеджера (видит всё, меняет только Опт и лиды): ' + mpin);
+  Logger.log('Ключ сервера для Netlify (SERVER_KEY): ' + skey);
 }
 
 function now_() { return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd'T'HH:mm:ss"); }
@@ -172,6 +179,12 @@ function doPost(e) {
   lock.waitLock(20000);
   try {
     var req = JSON.parse(e.postData.contents);
+    // входящие сообщения WhatsApp от функции на Netlify
+    if (req.action === 'lead_in') {
+      var sk = PropertiesService.getScriptProperties().getProperty('SERVER_KEY');
+      if (!sk || String(req.key) !== sk) return json_({ ok: false, error: 'key' });
+      return json_(leadIn_(req.lead || {}));
+    }
     var role = role_(req.pin);
     if (!role) return json_({ ok: false, error: 'pin' });
     var name = req.sheet;
@@ -249,6 +262,46 @@ function remove_(name, ids) {
     if (keep.length) sh.getRange(2, 1, keep.length, width).setValues(keep);
   }
   return { ok: true, count: count };
+}
+
+// Новое сообщение в WhatsApp: открытый лид с этим номером дополняется, иначе создаётся новый
+var OPEN_STAGES = { 'Новый': true, 'Связались': true, 'Отправили прайс': true };
+function digits_(p) {
+  var d = String(p || '').replace(/\D/g, '');
+  if (d.length === 11 && d.charAt(0) === '8') d = '7' + d.slice(1);
+  if (d.length === 10) d = '7' + d;
+  return d;
+}
+function leadIn_(m) {
+  var phone = digits_(m.phone);
+  if (phone.length < 10) return { ok: false, error: 'phone' };
+  var now = now_();
+  var text = String(m.text || '').slice(0, 500);
+  var leads = rows_('Лиды');
+  var open = leads.filter(function (l) { return digits_(l.phone) === phone && OPEN_STAGES[l.stage || 'Новый']; })[0];
+  if (open) {
+    var log = [];
+    try { log = JSON.parse(open.log || '[]'); } catch (e) { log = []; }
+    var lastWa = log.filter(function (x) { return x.by === 'WhatsApp'; }).pop();
+    var fresh = !lastWa || (new Date(now) - new Date(lastWa.ts)) > 12 * 3600 * 1000;
+    if (!fresh) return { ok: true, skipped: true };
+    log.push({ ts: now, by: 'WhatsApp', text: 'Написал снова: ' + text });
+    open.log = JSON.stringify(log);
+    open.note = text || open.note;
+    open.updated = now;
+    open.by = 'WhatsApp';
+    if (m.source && !open.source) open.source = m.source;
+    upsert_('Лиды', [open]);
+    return { ok: true, updated: open.id };
+  }
+  var lead = {
+    id: 'wa_' + Utilities.getUuid().slice(0, 8), created: now, name: String(m.name || '').slice(0, 80), phone: phone,
+    city: '', source: m.source || 'WhatsApp', stage: 'Новый', next: now.slice(0, 10), note: text, lost: '', sale: '',
+    log: JSON.stringify([{ ts: now, by: 'WhatsApp', text: text || '(без текста)' }]), updated: now, by: 'WhatsApp',
+    adId: m.adId || '', adUrl: m.adUrl || '', ctwa: m.ctwa || ''
+  };
+  upsert_('Лиды', [lead]);
+  return { ok: true, created: lead.id };
 }
 
 function log_(rows) {

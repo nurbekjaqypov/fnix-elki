@@ -623,7 +623,7 @@ leadForm.addEventListener('submit', e => {
   e.preventDefault();
   const d = phoneDigits(leadForm.phone.value);
   if (d.length < 10) return toast('Проверьте номер телефона');
-  const dup = S.leads.find(l => phoneDigits(l.phone) === d);
+  const dup = S.leads.find(l => phoneDigits(l.phone) === d && OPEN.includes(l.stage || 'Новый'));
   if (dup) { toast('Этот номер уже есть — открыл карточку'); leadForm.phone.value = ''; openLead(dup.id); return; }
   const note = leadForm.note.value.trim();
   const l = { id: uid(), created: nowIso(), name: leadForm.name.value.trim(), phone: d, city: leadForm.city.value.trim(), source: leadForm.source.value.trim(),
@@ -704,6 +704,7 @@ function openLead(id) {
   $('#lmLostWrap').classList.toggle('hidden', lmf.stage.value !== 'Отказ');
   $('#lmTitle').textContent = (l.name || 'Лид') + ' · создан ' + ruDate(String(l.created).slice(0, 10));
   $('#lmWa').href = waLink(l.phone);
+  const ad = $('#lmAd'); ad.classList.toggle('hidden', !l.adUrl); if (l.adUrl) ad.href = l.adUrl;
   const sale = S.opt.find(r => r.id === l.sale);
   $('#lmDeal').textContent = sale ? `Продажа: ${fmt(sale.sum)} — открыть` : 'Сделка → оформить продажу';
   renderLog(l); lm.classList.remove('hidden');
@@ -748,6 +749,13 @@ $('#lmDeal').addEventListener('click', () => {
   $('#optFormTitle').textContent = 'Продажа по лиду: ' + (l.name || phoneFmt(l.phone)); $('#optCancel').classList.remove('hidden');
   optForm.scrollIntoView({ behavior: 'smooth' }); optForm.model.focus();
 });
+// новые лиды из WhatsApp подтягиваются сами, пока открыта воронка
+setInterval(() => {
+  if (!remote || !pin || document.hidden || current !== 'opt' || segVal($('#optView')) !== 'crm') return;
+  if (!lm.classList.contains('hidden') || outbox.length || flushing) return;
+  const before = S.leads.length;
+  loadRemote().then(() => { const n = S.leads.length - before; if (n > 0) toast(`Новых лидов: ${n}`); }).catch(() => {});
+}, 60000);
 $('#lmDel').addEventListener('click', () => {
   const id = lmf.dataset.id; if (!confirm('Удалить лид совсем?')) return; closeLead(); del('leads', [id]);
 });
