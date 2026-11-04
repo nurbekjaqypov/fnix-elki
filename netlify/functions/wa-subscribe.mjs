@@ -28,8 +28,25 @@ export default async (req) => {
   const log = [];
   try {
     let wabas = [];
-    for (const edge of ['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts']) {
-      try { const j = await g(`${BUSINESS_ID}/${edge}?fields=id,name&limit=100`, token); wabas = wabas.concat(j.data || []); } catch (e) { log.push('⚠ ' + e.message); }
+    // 1) аккаунт задан вручную
+    if (env('WA_WABA_ID')) wabas.push({ id: env('WA_WABA_ID'), name: 'из WA_WABA_ID' });
+    // 2) аккаунты, к которым выдан доступ этому маркеру (не требует business_management)
+    if (!wabas.length) {
+      try {
+        const d = await g(`debug_token?input_token=${encodeURIComponent(token)}`, token);
+        const ids = new Set();
+        for (const sc of d.data?.granular_scopes || []) if (/whatsapp/.test(sc.scope)) (sc.target_ids || []).forEach(i => ids.add(i));
+        for (const id of ids) {
+          const w = await g(`${id}?fields=id,name`, token).catch(() => ({ id, name: id }));
+          wabas.push({ id: w.id || id, name: w.name || id });
+        }
+      } catch (e) { log.push('⚠ ' + e.message); }
+    }
+    // 3) через бизнес-портфолио (нужно разрешение business_management)
+    if (!wabas.length) {
+      for (const edge of ['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts']) {
+        try { const j = await g(`${BUSINESS_ID}/${edge}?fields=id,name&limit=100`, token); wabas = wabas.concat(j.data || []); } catch (e) { log.push('⚠ ' + e.message); }
+      }
     }
     if (!wabas.length) throw new Error('Маркер не видит ни одного аккаунта WhatsApp. Проверьте, что системному пользователю назначен аккаунт «Grantel Bikes».');
     let found = null;
