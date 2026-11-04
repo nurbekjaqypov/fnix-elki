@@ -52,15 +52,16 @@ export default async (req) => {
     if (!wabas.length) throw new Error('Маркер не видит ни одного аккаунта WhatsApp. Проверьте, что системному пользователю назначен аккаунт «Grantel Bikes».');
     let found = null;
     for (const w of wabas) {
-      const ph = await g(`${w.id}/phone_numbers?fields=id,display_phone_number,verified_name,status,platform_type`, token).catch(e => { log.push('⚠ ' + e.message); return { data: [] }; });
+      const ph = await g(`${w.id}/phone_numbers?fields=id,display_phone_number,verified_name`, token).catch(e => { log.push('⚠ ' + e.message); return { data: [] }; });
       log.push(`Аккаунт «${w.name}» (${w.id}): ${(ph.data || []).map(p => p.display_phone_number).join(', ') || 'нет номеров'}`);
       const p = (ph.data || []).find(p => String(p.display_phone_number).replace(/\D/g, '') === want);
       if (p) { found = { w, p }; break; }
     }
-    if (!found) throw new Error(`Номер ${want} не найден ни в одном доступном аккаунте.`);
+    // если номера не прочитались, всё равно подписываемся на известный аккаунт Grantel Bikes
+    if (!found) { found = { w: wabas[0], p: { display_phone_number: '+' + want + ' (номер не прочитан)' } }; log.push('Номер не прочитан — подписываю аккаунт ' + wabas[0].id); }
     const sub = await g(`${found.w.id}/subscribed_apps`, token, { method: 'POST' });
     const list = await g(`${found.w.id}/subscribed_apps`, token);
-    log.push('', `Номер: ${found.p.display_phone_number} · ${found.p.verified_name || ''} · статус ${found.p.status || '?'} · ${found.p.platform_type || ''}`,
+    log.push('', `Номер: ${found.p.display_phone_number} ${found.p.verified_name ? '· ' + found.p.verified_name : ''}`,
       `Подписка: ${sub.success ? 'оформлена' : JSON.stringify(sub)}`,
       `Приложения на аккаунте: ${(list.data || []).map(a => a.whatsapp_business_api_data?.name || a.name || a.id).join(', ')}`);
     return page('Готово', log.join('\n'), true);
