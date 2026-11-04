@@ -29,7 +29,7 @@ export default async (req) => {
   try {
     let wabas = [];
     // 1) аккаунт задан вручную
-    if (env('WA_WABA_ID')) wabas.push({ id: env('WA_WABA_ID'), name: 'из WA_WABA_ID' });
+    wabas.push({ id: env('WA_WABA_ID') || '2195591824729232', name: 'Grantel Bikes' });   // аккаунт WhatsApp с номером 0308
     // 2) аккаунты, к которым выдан доступ этому маркеру (не требует business_management)
     if (!wabas.length) {
       try {
