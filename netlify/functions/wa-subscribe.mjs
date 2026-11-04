@@ -34,6 +34,7 @@ export default async (req) => {
     if (!wabas.length) {
       try {
         const d = await g(`debug_token?input_token=${encodeURIComponent(token)}`, token);
+        log.push('Права маркера: ' + ((d.data?.scopes || []).join(', ') || 'нет') + (d.data?.is_valid === false ? ' (маркер недействителен)' : ''));
         const ids = new Set();
         for (const sc of d.data?.granular_scopes || []) if (/whatsapp/.test(sc.scope)) (sc.target_ids || []).forEach(i => ids.add(i));
         for (const id of ids) {
