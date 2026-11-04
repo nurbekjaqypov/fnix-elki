@@ -41,7 +41,7 @@ function messageText(m) {
 
 const adCache = new Map();
 async function campaignName(adId) {
-  const token = env('META_TOKEN');
+  const token = env('META_TOKEN') || env('META_SYSTEM_TOKEN');
   if (!token || !adId) return '';
   if (adCache.has(adId)) return adCache.get(adId);
   try {
