@@ -552,8 +552,8 @@ $('#voiceText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.pr
     rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = true; finalText = '';
     rec.onresult = e => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript + ' '; else interim += r[0].transcript; } $('#voiceText').value = (finalText + interim).trim(); };
     rec.onerror = e => { toast(e.error === 'not-allowed' ? 'Разрешите доступ к микрофону для сайта' : 'Ошибка микрофона: ' + e.error); };
-    rec.onend = () => { btn.classList.remove('rec'); btn.textContent = '🎙 Голосом'; rec = null; if ($('#voiceText').value.trim()) voiceFill($('#voiceText').value); };
-    try { rec.start(); btn.classList.add('rec'); btn.textContent = '■ Готово'; $('#voiceStatus').classList.remove('hidden'); $('#voiceStatus').textContent = 'Говорите… Нажмите «Готово», когда закончите.'; }
+    rec.onend = () => { btn.classList.remove('rec'); btn.querySelector('.rb-label').textContent = 'Помощник'; rec = null; if ($('#voiceText').value.trim()) voiceFill($('#voiceText').value); };
+    try { rec.start(); btn.classList.add('rec'); btn.querySelector('.rb-label').textContent = 'Слушаю… нажмите, чтобы закончить'; $('#voiceStatus').classList.remove('hidden'); $('#voiceStatus').textContent = 'Говорите… Нажмите «Готово», когда закончите.'; }
     catch { rec = null; toast('Не удалось включить микрофон'); }
   });
 })();
