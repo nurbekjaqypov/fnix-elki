@@ -301,3 +301,4 @@ tr.today td{background:rgba(232,194,107,.07)}
 .brand-sub{color:#c9d6e2;text-shadow:0 1px 2px rgba(0,0,0,.6)}
 .brand-name{filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))}
 .sync{background:rgba(5,14,26,.62);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#d5e0ea}
+.tabs button.active,.tabs button.active:hover{color:#1b1406;background:linear-gradient(180deg,var(--gold2),var(--gold))}
