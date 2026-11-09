@@ -218,3 +218,10 @@ select{appearance:none;-webkit-appearance:none}
 .lm-actions{flex-wrap:wrap}
 a.btn{text-decoration:none}
 @media (max-width:560px){.form-grid.two{grid-template-columns:1fr}.board{grid-auto-columns:82%}}
+
+/* голосовой ввод ДДС */
+.voice-box{display:flex;gap:8px;margin:-2px 0 12px}
+.voice-box input{flex:1}
+#voiceBtn.rec{background:linear-gradient(180deg,#ff8a80,#e05a52);color:#fff;animation:pulse 1.2s infinite}
+#voiceStatus{margin:-4px 2px 12px}
+.filled{box-shadow:0 0 0 2px rgba(76,194,138,.55)!important;transition:box-shadow .3s}

@@ -105,7 +105,13 @@
 <!-- ===== ДДС ===== -->
 <section id="tab-dds" class="tab">
   <div class="card owner-only">
-    <h3 id="ddsFormTitle">Новый расход</h3>
+    <div class="card-head"><h3 id="ddsFormTitle">Новый расход</h3>
+      <button type="button" class="btn gold sm" id="voiceBtn">🎙 Голосом</button></div>
+    <div class="voice-box">
+      <input id="voiceText" placeholder="Скажите или напишите: «50 тысяч Гылымхану за аренду склада, наличными, общее, постоянный»" autocomplete="off">
+      <button type="button" class="btn ghost sm" id="voiceParse">Разобрать</button>
+    </div>
+    <div id="voiceStatus" class="hint hidden"></div>
     <form id="ddsForm" class="form-grid">
       <label>Дата<input type="date" name="date" required></label>
       <label>Канал

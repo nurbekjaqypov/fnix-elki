@@ -455,6 +455,109 @@ ddsForm.item.addEventListener('change', () => {
   if (!ddsForm.counterparty.value) ddsForm.counterparty.value = last.counterparty || '';
   if (!ddsForm.payment.value) ddsForm.payment.value = last.payment || '';
 });
+
+/* ================= ДДС: голосовой ввод ================= */
+const NUMW = { 'ноль':0,'один':1,'одна':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,'восемь':8,'девять':9,'десять':10,'одиннадцать':11,'двенадцать':12,'тринадцать':13,'четырнадцать':14,'пятнадцать':15,'шестнадцать':16,'семнадцать':17,'восемнадцать':18,'девятнадцать':19,'двадцать':20,'тридцать':30,'сорок':40,'пятьдесят':50,'шестьдесят':60,'семьдесят':70,'восемьдесят':80,'девяносто':90,'сто':100,'двести':200,'триста':300,'четыреста':400,'пятьсот':500,'шестьсот':600,'семьсот':700,'восемьсот':800,'девятьсот':900,'полтора':1.5,'полторы':1.5 };
+function parseAmount(t) {
+  // «1,5 млн», «50 тысяч», «50 000», «пятьдесят тысяч», «200к»
+  let s = t.toLowerCase().replace(/(\d)\s+(?=\d{3}\b)/g, '$1');
+  let m = s.match(/(\d+(?:[.,]\d+)?)\s*(млн|миллион[а-я]*|тыс[а-я]*|тыщ[а-я]*|к(?![а-яё]))?/);
+  if (m) { let v = parseFloat(m[1].replace(',', '.')); const u = m[2] || ''; if (/^млн|^миллион/.test(u)) v *= 1e6; else if (u) v *= 1e3; return Math.round(v); }
+  let total = 0, cur = 0, hit = false;
+  for (const w of s.split(/[\s,]+/)) {
+    if (w in NUMW) { cur += NUMW[w]; hit = true; }
+    else if (/^тысяч|^тыщ|^тысяча|^тысячи/.test(w)) { total += (cur || 1) * 1000; cur = 0; hit = true; }
+    else if (/^миллион|^млн/.test(w)) { total += (cur || 1) * 1e6; cur = 0; hit = true; }
+  }
+  return hit ? Math.round(total + cur) : null;
+}
+const MONTHS = ['январ','феврал','март','апрел','ма[йя]','июн','июл','август','сентябр','октябр','ноябр','декабр'];
+function parseDate(t) {
+  const d = new Date(); const iso = x => new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  if (/позавчера/.test(t)) { d.setDate(d.getDate() - 2); return iso(d); }
+  if (/вчера/.test(t)) { d.setDate(d.getDate() - 1); return iso(d); }
+  if (/сегодня/.test(t)) return iso(d);
+  let m = t.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
+  if (m) { const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : d.getFullYear(); return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  for (let i = 0; i < 12; i++) { m = t.match(new RegExp('(\\d{1,2})\\s+' + MONTHS[i])); if (m) return `${d.getFullYear()}-${String(i + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  return null;
+}
+const lc = s => String(s || '').toLowerCase().replace(/ё/g, 'е');
+function findKnown(t, list) {
+  const tt = lc(t); let best = null;
+  list.forEach(v => { const x = lc(v).trim(); if (x.length >= 3 && tt.includes(x) && (!best || x.length > lc(best).length)) best = v; });
+  if (best) return best;
+  // по корню слова: «гылымхану» → «Гылымхан»
+  list.forEach(v => { const x = lc(v).trim(); if (x.length >= 5 && !best && tt.split(/[^а-яa-z0-9]+/).some(w => w.length >= 5 && (w.startsWith(x.slice(0, -1)) || x.startsWith(w.slice(0, -1))))) best = v; });
+  return best;
+}
+function parseDdsLocal(text, known) {
+  const t = lc(text), f = {};
+  f.amount = parseAmount(t); f.date = parseDate(t);
+  // явные метки: «статья …», «контрагент …», «назначение …», «оплата …»
+  const labels = { item: 'статья', counterparty: 'контрагент', purpose: 'назначение', payment: 'оплата|способ оплаты' };
+  const all = 'статья|контрагент|назначение|способ оплаты|оплата|сумма|канал|дата';
+  for (const [k, l] of Object.entries(labels)) {
+    const m = text.match(new RegExp('(?:' + l + ')\\s*[:\\-]?\\s*(.+?)(?=\\s*(?:,|\\.|;|(?<![а-яёa-z])(?:' + all + ')(?![а-яёa-z])|$))', 'i'));
+    if (m && m[1].trim()) f[k] = m[1].trim();
+  }
+  if (/наличн|налом|кеш|cash/.test(t)) f.payment = f.payment || 'Наличные';
+  else if (/каспи\s*голд|kaspi\s*gold|через\s*каспи|каспи\s*банк|kaspi\s*bank|каспи\s*перевод|переводом/.test(t)) f.payment = f.payment || 'Kaspi Bank';
+  else if (/халык|halyk/.test(t)) f.payment = f.payment || 'Halyk Bank';
+  const tNoPay = t.replace(/каспи\s*(голд|банк|переводом)|kaspi\s*(gold|bank)|через\s*каспи/g, '');
+  if (/(?<![а-яёa-z])опт/.test(t)) f.channel = 'Опт'; else if (/(?<![а-яёa-z])вб(?![а-яёa-z])|wildberries|вайлдберр|валдбер|(?<![а-яёa-z])wb(?![а-яёa-z])/.test(t)) f.channel = 'WB';
+  else if (/каспи|kaspi/.test(tNoPay)) f.channel = 'Kaspi'; else if (/общ/.test(t)) f.channel = 'Общее';
+  if (/постоянн/.test(t)) f.kind = 'Постоянный'; else if (/переменн/.test(t)) f.kind = 'Переменный';
+  if (/[её]л(ок|к|очн)/.test(t)) f.trees = true;
+  f.item = f.item || findKnown(text, known.items);
+  f.counterparty = f.counterparty || findKnown(text, known.counterparties);
+  f.payment = findKnown(f.payment || text, known.payments) || f.payment;
+  if (!f.purpose) { const m = text.match(/(?<![а-яёa-z])за\s+(.+?)(?=,|\.|;|$)/i); if (m) f.purpose = m[1].trim(); }
+  if (!f.item && f.purpose) f.item = findKnown(f.purpose, known.items) || f.purpose;
+  return f;
+}
+function ddsKnown() {
+  const live = S.dds.filter(r => !r.deleted), u = k => [...new Set(live.map(r => String(r[k] || '').trim()).filter(Boolean))];
+  return { items: u('item'), counterparties: u('counterparty'), payments: [...new Set([...u('payment'), 'Наличные', 'Kaspi Bank', 'Halyk Bank'])], purposes: u('purpose') };
+}
+async function voiceFill(text) {
+  text = String(text || '').trim(); if (!text) return;
+  const st = $('#voiceStatus'); st.classList.remove('hidden'); st.textContent = 'Разбираю…';
+  const known = ddsKnown();
+  let f = null, how = 'сайт';
+  try {
+    const r = await fetch('/api/parse-dds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, today: today(), known }) });
+    const j = await r.json(); if (j.ok && j.fields) { f = j.fields; how = 'ИИ'; }
+  } catch { }
+  const loc = parseDdsLocal(text, known);
+  if (!f) f = loc; else Object.keys(loc).forEach(k => { if ((f[k] === null || f[k] === undefined || f[k] === '') && loc[k] != null) f[k] = loc[k]; });
+  const set = (name, v) => { if (v === null || v === undefined || v === '') return; const el = ddsForm[name]; el.value = v; el.classList.add('filled'); setTimeout(() => el.classList.remove('filled'), 2500); };
+  set('date', f.date); set('item', f.item); set('counterparty', f.counterparty); set('payment', f.payment); set('purpose', f.purpose);
+  if (f.amount) set('amount', Math.round(num(f.amount)));
+  if (['Kaspi', 'WB', 'Опт', 'Общее'].includes(f.channel)) setSeg($('[data-name=channel]', ddsForm), f.channel);
+  if (['Постоянный', 'Переменный'].includes(f.kind)) setSeg($('[data-name=kind]', ddsForm), f.kind);
+  if (f.trees === true) ddsForm.trees.checked = true;
+  const miss = [!f.amount && 'сумма', !f.item && 'статья'].filter(Boolean);
+  st.textContent = `«${text}» → разобрал (${how}). ` + (miss.length ? `Не понял: ${miss.join(', ')} — допишите. ` : '') + 'Проверьте поля и нажмите «Сохранить».';
+}
+$('#voiceParse').addEventListener('click', () => voiceFill($('#voiceText').value));
+$('#voiceText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); voiceFill($('#voiceText').value); } });
+(() => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = $('#voiceBtn');
+  if (!SR) { btn.addEventListener('click', () => { toast('Браузер не поддерживает голос — нажмите на поле и используйте микрофон клавиатуры'); $('#voiceText').focus(); }); return; }
+  let rec = null, finalText = '';
+  btn.addEventListener('click', () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = true; finalText = '';
+    rec.onresult = e => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript + ' '; else interim += r[0].transcript; } $('#voiceText').value = (finalText + interim).trim(); };
+    rec.onerror = e => { toast(e.error === 'not-allowed' ? 'Разрешите доступ к микрофону для сайта' : 'Ошибка микрофона: ' + e.error); };
+    rec.onend = () => { btn.classList.remove('rec'); btn.textContent = '🎙 Голосом'; rec = null; if ($('#voiceText').value.trim()) voiceFill($('#voiceText').value); };
+    try { rec.start(); btn.classList.add('rec'); btn.textContent = '■ Готово'; $('#voiceStatus').classList.remove('hidden'); $('#voiceStatus').textContent = 'Говорите… Нажмите «Готово», когда закончите.'; }
+    catch { rec = null; toast('Не удалось включить микрофон'); }
+  });
+})();
+
 function fillDatalists() {
   const freq = (rows, k, extra = []) => {
     const c = {}; extra.forEach(x => c[x] = 0);
