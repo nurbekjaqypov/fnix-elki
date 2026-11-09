@@ -271,3 +271,22 @@ button.bar-row:hover .bar i{background:linear-gradient(90deg,#a87b22,var(--gold)
 .pbar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--pine),var(--green))}
 .pbar i.low{background:linear-gradient(90deg,#8a2f2a,var(--red))}
 tr.today td{background:rgba(232,194,107,.07)}
+
+/* Северное сияние */
+.aurora{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 45%,transparent 80%);mask-image:linear-gradient(180deg,#000 0%,#000 45%,transparent 80%)}
+.aurora i{position:absolute;left:-20%;width:140%;height:55vh;border-radius:50%;filter:blur(48px);mix-blend-mode:screen;opacity:.0;will-change:transform,opacity}
+.aurora .a1{top:-12vh;background:linear-gradient(90deg,transparent 5%,rgba(46,255,170,.75) 30%,rgba(60,220,255,.45) 55%,transparent 85%);
+  transform-origin:30% 50%;animation:aur1 18s ease-in-out infinite}
+.aurora .a2{top:-4vh;background:linear-gradient(90deg,transparent 15%,rgba(140,100,255,.5) 40%,rgba(46,255,170,.5) 65%,transparent 90%);
+  transform-origin:70% 50%;animation:aur2 23s ease-in-out infinite}
+.aurora .a3{top:6vh;height:35vh;background:linear-gradient(90deg,transparent 10%,rgba(46,255,170,.3) 35%,rgba(255,90,200,.18) 60%,transparent 85%);
+  animation:aur3 29s ease-in-out infinite}
+.aurora .a4{top:-18vh;height:70vh;left:10%;width:80%;background:repeating-linear-gradient(90deg,rgba(80,255,190,0) 0 22px,rgba(80,255,190,.16) 30px,rgba(80,255,190,0) 44px);
+  filter:blur(14px);animation:aur4 16s ease-in-out infinite}
+@keyframes aur1{0%,100%{transform:translateX(-6%) rotate(-6deg) scaleY(.8);opacity:.55}50%{transform:translateX(8%) rotate(4deg) scaleY(1.15);opacity:.9}}
+@keyframes aur2{0%,100%{transform:translateX(7%) rotate(5deg) scaleY(1);opacity:.35}50%{transform:translateX(-9%) rotate(-3deg) scaleY(.75);opacity:.75}}
+@keyframes aur3{0%,100%{transform:translateX(-4%) skewX(-12deg);opacity:.25}50%{transform:translateX(6%) skewX(10deg);opacity:.6}}
+@keyframes aur4{0%,100%{transform:translateX(-5%) skewX(-18deg) scaleY(.9);opacity:.25}50%{transform:translateX(5%) skewX(12deg) scaleY(1.1);opacity:.55}}
+@media (prefers-reduced-motion:reduce){.aurora i{animation:none;opacity:.4}}
+@media (max-width:560px){.aurora i{filter:blur(32px)}}
