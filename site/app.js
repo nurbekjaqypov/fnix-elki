@@ -665,11 +665,41 @@ function renderPnl() {
   chart('pnlChart', { type: 'bar', data: { labels: series.map(s => mn[+s.m.slice(5) - 1] + ' ' + s.m.slice(2, 4)), datasets: [
     { label: 'Выручка', data: series.map(s => s.rev), backgroundColor: 'rgba(232,194,107,.55)', borderRadius: 4 },
     { label: 'Чистая прибыль', data: series.map(s => s.net), backgroundColor: series.map(s => s.net < 0 ? 'rgba(224,90,82,.7)' : 'rgba(76,194,138,.7)'), borderRadius: 4 }] }, options: chartOpts });
-  const items = {}; d.forEach(r => items[r.item] = (items[r.item] || 0) + r.amount);
-  const il = Object.entries(items).sort((a, b) => b[1] - a[1]); const max = il[0]?.[1] || 1;
-  $('#pnlItems').innerHTML = (warn.length ? `<p class="hint neg">⚠️ ${warn.join(', ')}</p>` : '') + (il.length ? il.slice(0, 12).map(([n, v]) =>
-    `<div class="bar-row"><span>${esc(n)}</span><span class="n">${fmt(v)}</span><div class="bar"><i style="width:${v / max * 100}%"></i></div></div>`).join('') : '<div class="empty">Расходов за период нет</div>');
+  renderPnlItems(d, warn);
 }
+
+// Расходы по статьям → по назначению → записи (фильтр по клику)
+const pnlDrill = { item: null, purpose: null };
+function renderPnlItems(d, warn = []) {
+  const key = v => String(v || '').trim() || '—';
+  const group = (rows, f) => { const g = {}; rows.forEach(r => { const k = key(r[f]); g[k] = (g[k] || 0) + r.amount; }); return Object.entries(g).sort((a, b) => b[1] - a[1]); };
+  const bars = (list, attr) => { const max = list[0]?.[1] || 1, tot = list.reduce((s, x) => s + x[1], 0);
+    return list.map(([n, v]) => `<button class="bar-row click" ${attr}="${esc(n)}"><span>${esc(n)}</span><span class="n">${fmt(v)} <small>${pct(v, tot)}</small></span><div class="bar"><i style="width:${v / max * 100}%"></i></div></button>`).join(''); };
+  let html = warn.length ? `<p class="hint neg">⚠️ ${warn.join(', ')}</p>` : '';
+  const { item, purpose } = pnlDrill;
+  const inItem = item ? d.filter(r => key(r.item) === item) : [];
+  if (item && !inItem.length) pnlDrill.item = pnlDrill.purpose = null;
+  if (!pnlDrill.item) {
+    const il = group(d, 'item');
+    html += il.length ? bars(il, 'data-item') + '<p class="hint">Нажмите на статью, чтобы увидеть назначения и записи.</p>' : '<div class="empty">Расходов за период нет</div>';
+  } else {
+    const crumbs = `<div class="crumbs"><button data-crumb="all">Все статьи</button> › ` + (purpose ? `<button data-crumb="item">${esc(item)}</button> › <b>${esc(purpose)}</b>` : `<b>${esc(item)}</b>`) + `</div>`;
+    const rows = purpose ? inItem.filter(r => key(r.purpose) === purpose) : inItem;
+    html += crumbs + `<div class="drill-total">Итого: <b>${fmt(sum(rows, 'amount'))}</b> · записей: ${rows.length}</div>`;
+    if (!purpose) html += bars(group(inItem, 'purpose'), 'data-purpose');
+    html += `<div class="drill-list">` + [...rows].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 50).map(r =>
+      `<div><span>${ruDate(r.date)} · ${esc(r.counterparty || '—')}${purpose ? '' : ' · ' + esc(r.purpose || '—')}<small>${esc(r.channel)} · ${esc(r.kind)}${r.payment ? ' · ' + esc(r.payment) : ''}</small></span><b>${fmt(r.amount)}</b></div>`).join('') + `</div>`;
+  }
+  $('#pnlItems').innerHTML = html;
+}
+$('#pnlItems').addEventListener('click', e => {
+  const b = e.target.closest('[data-item],[data-purpose],[data-crumb]'); if (!b) return;
+  if (b.dataset.item !== undefined) { pnlDrill.item = b.dataset.item; pnlDrill.purpose = null; }
+  else if (b.dataset.purpose !== undefined) pnlDrill.purpose = b.dataset.purpose;
+  else if (b.dataset.crumb === 'all') pnlDrill.item = pnlDrill.purpose = null;
+  else pnlDrill.purpose = null;
+  render();
+});
 
 /* ================= Опт ================= */
 const optForm = $('#optForm');
