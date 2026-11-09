@@ -45,7 +45,7 @@ var HISTORY = 'ДДС_История';
 var MANAGER_SHEETS = { 'Лиды': true, 'Опт': true };   // что может менять менеджер
 var PROTECTED = { 'ДДС': true };     // листы, где записи не удаляются физически
 var BACKUP_FOLDER = 'FNIX Ёлки — бэкапы';
-var BACKUP_KEEP = 30;
+var BACKUP_KEEP = 1;     // хранить только последнюю копию
 var TZ = 'Asia/Almaty';
 
 function setup() {
