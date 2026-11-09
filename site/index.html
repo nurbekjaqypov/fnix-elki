@@ -18,6 +18,14 @@
 </head>
 <body>
 <canvas id="snow" aria-hidden="true"></canvas>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+            <radialGradient id="rbHead" cx="35%" cy="28%" r="80%"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#e3eef8"/><stop offset="1" stop-color="#8fa9c2"/></radialGradient>
+            <linearGradient id="rbVisor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d3a56"/><stop offset="1" stop-color="#061423"/></linearGradient>
+            <radialGradient id="rbEye" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#eafff6"/><stop offset=".4" stop-color="#5ff2b5"/><stop offset="1" stop-color="#14a873"/></radialGradient>
+            <radialGradient id="rbBall" cx="35%" cy="30%" r="70%"><stop offset="0" stop-color="#fff3c8"/><stop offset=".5" stop-color="#e8c26b"/><stop offset="1" stop-color="#a87b22"/></radialGradient>
+            <linearGradient id="rbEar" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6d8aa6"/><stop offset=".5" stop-color="#c9d9e8"/><stop offset="1" stop-color="#6d8aa6"/></linearGradient>
+            <filter id="rbShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.5" stdDeviation="2" flood-color="#000" flood-opacity=".45"/></filter>
+          </defs></svg>
 
 <div id="login" class="login hidden">
   <div class="login-card">
@@ -51,6 +59,7 @@
     <button data-tab="pnl">ОПиУ</button>
     <button data-tab="opt">Опт · лиды</button>
     <button data-tab="trucks">Фуры</button>
+    <button data-tab="plan">План продаж</button>
   </nav>
 </header>
 
@@ -108,14 +117,6 @@
     <div class="card-head"><h3 id="ddsFormTitle">Новый расход</h3>
       <button type="button" class="robot-btn" id="voiceBtn" aria-label="Голосовой помощник" title="Голосовой помощник — нажмите и говорите">
         <svg viewBox="0 0 64 64" width="52" height="52" aria-hidden="true">
-          <defs>
-            <radialGradient id="rbHead" cx="35%" cy="28%" r="80%"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#e3eef8"/><stop offset="1" stop-color="#8fa9c2"/></radialGradient>
-            <linearGradient id="rbVisor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d3a56"/><stop offset="1" stop-color="#061423"/></linearGradient>
-            <radialGradient id="rbEye" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#eafff6"/><stop offset=".4" stop-color="#5ff2b5"/><stop offset="1" stop-color="#14a873"/></radialGradient>
-            <radialGradient id="rbBall" cx="35%" cy="30%" r="70%"><stop offset="0" stop-color="#fff3c8"/><stop offset=".5" stop-color="#e8c26b"/><stop offset="1" stop-color="#a87b22"/></radialGradient>
-            <linearGradient id="rbEar" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6d8aa6"/><stop offset=".5" stop-color="#c9d9e8"/><stop offset="1" stop-color="#6d8aa6"/></linearGradient>
-            <filter id="rbShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.5" stdDeviation="2" flood-color="#000" flood-opacity=".45"/></filter>
-          </defs>
           <g filter="url(#rbShadow)">
             <line x1="32" y1="8" x2="32" y2="16" stroke="#9fb6cc" stroke-width="2.5" stroke-linecap="round"/>
             <circle class="rb-ball" cx="32" cy="7" r="4" fill="url(#rbBall)"/>
@@ -251,6 +252,33 @@
 </section>
 
 <!-- ===== Фуры ===== -->
+<!-- ===== План продаж ===== -->
+<section id="tab-plan" class="tab">
+  <div class="card owner-only">
+    <div class="card-head"><h3>Факт продаж за день</h3>
+      <button type="button" class="robot-btn" id="planVoiceBtn" aria-label="Голосовой помощник" title="Голосовой помощник — нажмите и говорите"></button></div>
+    <div class="voice-box">
+      <input id="planVoiceText" placeholder="Скажите или напишите: «G180 пять, XG210 три, SG180 десять, люкс B 210 один»" autocomplete="off">
+      <button type="button" class="btn ghost sm" id="planVoiceParse">Разобрать</button>
+    </div>
+    <div id="planVoiceStatus" class="hint hidden"></div>
+    <div class="plan-day-head">
+      <label>Дата <input type="date" id="planDate"></label>
+      <span id="planDayInfo" class="hint"></span>
+    </div>
+    <div id="planGrid" class="plan-grid"></div>
+    <div class="form-actions"><button class="btn gold" id="planSave">Сохранить день</button><button class="btn ghost" id="planClear" type="button">Очистить</button></div>
+  </div>
+  <div class="kpis" id="planKpis"></div>
+  <div class="grid2">
+    <div class="card"><h3>Накопленно: план и факт, шт</h3><div class="chart-box"><canvas id="planCumChart"></canvas></div></div>
+    <div class="card"><h3>По дням: план и факт, шт</h3><div class="chart-box"><canvas id="planDayChart"></canvas></div></div>
+  </div>
+  <div class="card"><h3>По моделям</h3><div class="table-wrap"><table id="planModels"></table></div></div>
+  <div class="card"><h3>По неделям</h3><div class="table-wrap"><table id="planWeeks"></table></div></div>
+  <p class="hint">План — из файла «Финмодель 2027» (Kaspi, по дате поступления заказа). Прибыль = факт, шт × плановая прибыль с 1 шт.</p>
+</section>
+
 <section id="tab-trucks" class="tab">
   <div class="card owner-only">
     <h3 id="truckFormTitle">Новая фура</h3>
@@ -324,6 +352,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="config.js"></script>
+<script src="plan.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

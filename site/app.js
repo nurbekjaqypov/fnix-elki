@@ -5,7 +5,7 @@ const CFG = window.CONFIG || {};
 const COMM = CFG.KASPI_COMMISSION ?? 0.12;
 const TAX = CFG.TAX_RATE ?? 0.03;
 const TAXL = 'Налог ' + +(TAX * 100).toFixed(2) + '%';
-const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', stores: 'Магазины', leads: 'Лиды', opt: 'Опт', trucks: 'Фуры' };
+const SHEETS = { dds: 'ДДС', cost: 'Себестоимость', map: 'Сопоставление', kaspi: 'Kaspi', stores: 'Магазины', leads: 'Лиды', fact: 'ПланФакт', opt: 'Опт', trucks: 'Фуры' };
 const NUMS = ['amount', 'cost', 'sum', 'qty', 'logistics', 'goodsSum', 'driver', 'customs', 'border'];
 const LS = { state: 'fnix_state', outbox: 'fnix_outbox', pin: 'fnix_pin', period: 'fnix_period' };
 const CHANNELS = ['Kaspi', 'Опт', 'WB', 'Общее'];
@@ -28,7 +28,7 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JS
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
 
 /* ================= Хранилище ================= */
-let S = { dds: [], cost: [], map: [], kaspi: [], stores: [], leads: [], opt: [], trucks: [] };
+let S = { dds: [], cost: [], map: [], kaspi: [], stores: [], leads: [], fact: [], opt: [], trucks: [] };
 let outbox = lsGet(LS.outbox, []);
 let pin = lsGet(LS.pin, '');
 const remote = !!CFG.API_URL;
@@ -542,21 +542,22 @@ async function voiceFill(text) {
 }
 $('#voiceParse').addEventListener('click', () => voiceFill($('#voiceText').value));
 $('#voiceText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); voiceFill($('#voiceText').value); } });
-(() => {
+function attachVoice(btn, input, status, onText) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const btn = $('#voiceBtn');
-  if (!SR) { btn.addEventListener('click', () => { toast('Браузер не поддерживает голос — нажмите на поле и используйте микрофон клавиатуры'); $('#voiceText').focus(); }); return; }
+  if (!SR) { btn.addEventListener('click', () => { toast('Браузер не поддерживает голос — нажмите на поле и используйте микрофон клавиатуры'); input.focus(); }); return; }
   let rec = null, finalText = '';
+  const label = () => btn.querySelector('.rb-label');
   btn.addEventListener('click', () => {
     if (rec) { rec.stop(); return; }
     rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = true; finalText = '';
-    rec.onresult = e => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript + ' '; else interim += r[0].transcript; } $('#voiceText').value = (finalText + interim).trim(); };
+    rec.onresult = e => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript + ' '; else interim += r[0].transcript; } input.value = (finalText + interim).trim(); };
     rec.onerror = e => { toast(e.error === 'not-allowed' ? 'Разрешите доступ к микрофону для сайта' : 'Ошибка микрофона: ' + e.error); };
-    rec.onend = () => { btn.classList.remove('rec'); btn.querySelector('.rb-label').textContent = 'Помощник'; rec = null; if ($('#voiceText').value.trim()) voiceFill($('#voiceText').value); };
-    try { rec.start(); btn.classList.add('rec'); btn.querySelector('.rb-label').textContent = 'Слушаю… нажмите, чтобы закончить'; $('#voiceStatus').classList.remove('hidden'); $('#voiceStatus').textContent = 'Говорите… Нажмите «Готово», когда закончите.'; }
+    rec.onend = () => { btn.classList.remove('rec'); if (label()) label().textContent = 'Помощник'; rec = null; if (input.value.trim()) onText(input.value); };
+    try { rec.start(); btn.classList.add('rec'); if (label()) label().textContent = 'Слушаю… нажмите, чтобы закончить'; status.classList.remove('hidden'); status.textContent = 'Говорите… Нажмите на робота, когда закончите.'; }
     catch { rec = null; toast('Не удалось включить микрофон'); }
   });
-})();
+}
+attachVoice($('#voiceBtn'), $('#voiceText'), $('#voiceStatus'), voiceFill);
 
 function fillDatalists() {
   const freq = (rows, k, extra = []) => {
@@ -966,6 +967,130 @@ function renderTrucks() {
   }).join('') : '<div class="card empty">Фур пока нет</div>';
 }
 
+
+/* ================= План продаж ================= */
+const PLAN = window.PLAN || { models: [], days: [], profit: {}, info: {}, weeks: [] };
+const PM = PLAN.models;
+const planDay = d => PLAN.days.find(x => x.d === d);
+const planQ = (d, m) => { const x = planDay(d); return x ? x.q[PM.indexOf(m)] || 0 : 0; };
+const planTot = d => { const x = planDay(d); return x ? x.q.reduce((a, b) => a + b, 0) : 0; };
+function factMap() { const f = {}; S.fact.forEach(r => { (f[r.date] ||= {})[r.model] = num(r.qty); }); return f; }
+const factTot = (fm, d) => Object.values(fm[d] || {}).reduce((a, b) => a + b, 0);
+const factProfit = (fm, d) => Object.entries(fm[d] || {}).reduce((a, [m, q]) => a + q * (PLAN.profit[m] || 0), 0);
+const planProfit = d => { const x = planDay(d); return x ? x.q.reduce((a, q, i) => a + q * (PLAN.profit[PM[i]] || 0), 0) : 0; };
+function planDefaultDate() { const t = today(), f = PLAN.days[0]?.d, l = PLAN.days[PLAN.days.length - 1]?.d; return !f ? t : t < f ? f : t > l ? l : t; }
+const planDateEl = $('#planDate');
+if (PLAN.days.length) { planDateEl.min = PLAN.days[0].d; planDateEl.max = PLAN.days[PLAN.days.length - 1].d; }
+planDateEl.value = planDefaultDate();
+planDateEl.addEventListener('change', () => fillPlanGrid());
+function fillPlanGrid() {
+  const d = planDateEl.value, fm = factMap()[d] || {};
+  $('#planGrid').innerHTML = PM.map(m => { const p = planQ(d, m), v = fm[m];
+    const cls = v === undefined ? '' : v >= p ? 'done' : 'below';
+    return `<label class="plan-cell ${cls}"><span class="m">${esc(m)} <small>план ${p}</small></span><input type="number" min="0" step="1" inputmode="numeric" data-m="${esc(m)}" value="${v ?? ''}" placeholder="0"></label>`; }).join('');
+  const ft = factTot(factMap(), d), pt = planTot(d);
+  $('#planDayInfo').textContent = `${ruDate(d)}: план ${fmtN(pt)} шт` + (factMap()[d] ? ` · факт ${fmtN(ft)} шт (${pct(ft, pt)})` : ' · факт не внесён');
+}
+$('#planGrid').addEventListener('input', () => { const t = $$('#planGrid input').reduce((a, i) => a + num(i.value), 0); $('#planDayInfo').textContent = `${ruDate(planDateEl.value)}: план ${fmtN(planTot(planDateEl.value))} шт · вводится ${fmtN(t)} шт`; });
+$('#planClear').addEventListener('click', () => $$('#planGrid input').forEach(i => i.value = ''));
+$('#planSave').addEventListener('click', () => {
+  const d = planDateEl.value; if (!d) return toast('Выберите дату');
+  const old = factMap()[d] || {};
+  const rows = $$('#planGrid input').filter(i => i.value !== '' || old[i.dataset.m] !== undefined)
+    .map(i => ({ id: d + '_' + i.dataset.m, date: d, model: i.dataset.m, qty: Math.max(0, Math.round(num(i.value))), updated: nowIso() }));
+  if (!rows.length) return toast('Введите хотя бы одну модель');
+  put('fact', rows); toast(`Сохранено: ${ruDate(d)}, ${fmtN(rows.reduce((a, r) => a + r.qty, 0))} шт`);
+});
+
+// голос: «G180 пять, XG210 три, люкс B 210 один, вчера»
+function normModels(text) {
+  let t = ' ' + lc(text).replace(/[,;.]/g, ' , ') + ' ';
+  const H = [['сто пятьдесят', '150'], ['сто восемьдесят', '180'], ['двести десять', '210'], ['двести сорок', '240']];
+  H.forEach(([w, n]) => { t = t.replace(new RegExp(w, 'g'), n); });
+  const rep = [[/(?<![а-яa-z])(икс|экс)\s*(эс|s)\s*(джи|жи|g)(?![а-я])/g, ' xsg'], [/(?<![а-яa-z])(икс|экс)\s*(джи|жи|g)(?![а-я])/g, ' xg'],
+    [/(?<![а-яa-z])(эс|s)\s*(джи|жи)(?![а-я])/g, ' sg'], [/(?<![а-яa-z])(джи|жи)(?![а-я])/g, ' g'], [/(?<![a-z])x\s+(s?g)/g, 'x$1'], [/(?<![a-z])s\s+g/g, 'sg'],
+    [/(?<![а-яa-z])(люкс|лакс|lux)\s*/g, 'lux '], [/lux (а|a)(?![а-я])/g, 'lux a'], [/lux (бэ|би|б|be|b)(?![а-я])/g, 'lux b']];
+  rep.forEach(([a, b]) => { t = t.replace(a, b); });
+  return t.replace(/(x?s?g)\s+(\d{3})/g, '$1$2').replace(/lux ([ab])\s*(\d{3})/g, 'LUX $1 $2');
+}
+function parsePlanLocal(text) {
+  const t = normModels(text), out = {};
+  const models = [...PM].sort((a, b) => b.length - a.length);
+  const re = /(lux [ab] \d{3}|x?s?g\d{3})\s*(?:[-—–:=]|\sпо\s)?\s*([^,]*?)(?=\s(?:lux [ab] \d{3}|x?s?g\d{3})|,|$)/gi;
+  let m;
+  while ((m = re.exec(t))) {
+    const key = m[1].toUpperCase().replace('LUX A', 'LUX A').replace('LUX B', 'LUX B');
+    const model = models.find(x => x.toUpperCase() === key); if (!model) continue;
+    const q = parseAmount(m[2].replace(/шт\w*/g, '')); if (q !== null) out[model] = q;
+  }
+  return { qty: out, date: parseDate(lc(text)) };
+}
+async function planVoiceFill(text) {
+  text = String(text || '').trim(); if (!text) return;
+  const st = $('#planVoiceStatus'); st.classList.remove('hidden'); st.textContent = 'Разбираю…';
+  let r = null, how = 'сайт';
+  try { const res = await fetch('/api/parse-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, today: today(), models: PM }) });
+    const j = await res.json(); if (j.ok && j.fields) { r = j.fields; how = 'ИИ'; } } catch { }
+  const loc = parsePlanLocal(text);
+  if (!r || !r.qty || !Object.keys(r.qty).length) { r = loc; how = 'сайт'; }
+  if (r.date && r.date !== planDateEl.value) { planDateEl.value = r.date; fillPlanGrid(); }
+  let n = 0;
+  Object.entries(r.qty || {}).forEach(([m, q]) => { const i = $(`#planGrid input[data-m="${CSS.escape(m)}"]`); if (i && q !== null) { i.value = Math.round(num(q)); i.classList.add('filled'); setTimeout(() => i.classList.remove('filled'), 2500); n++; } });
+  $('#planGrid').dispatchEvent(new Event('input'));
+  st.textContent = n ? `«${text}» → заполнено моделей: ${n} (${how}). Проверьте и нажмите «Сохранить день».` : `«${text}» — не нашёл моделей. Говорите так: «G180 пять, XG210 три».`;
+}
+$('#planVoiceBtn').innerHTML = $('#voiceBtn').innerHTML;
+$('#planVoiceParse').addEventListener('click', () => planVoiceFill($('#planVoiceText').value));
+$('#planVoiceText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); planVoiceFill($('#planVoiceText').value); } });
+attachVoice($('#planVoiceBtn'), $('#planVoiceText'), $('#planVoiceStatus'), planVoiceFill);
+
+function renderPlan() {
+  if (!PLAN.days.length) { $('#planKpis').innerHTML = '<div class="empty">План не загружен</div>'; return; }
+  if (document.activeElement?.closest?.('#planGrid') == null) fillPlanGrid();
+  const fm = factMap(), t = today();
+  const last = PLAN.days[PLAN.days.length - 1].d, first = PLAN.days[0].d;
+  const cut = t < first ? first : t > last ? last : t;          // «сегодня» в пределах плана
+  const pastDays = PLAN.days.filter(x => x.d <= cut);
+  const pCum = pastDays.reduce((a, x) => a + planTot(x.d), 0);
+  const fCum = Object.keys(fm).filter(d => d <= cut).reduce((a, d) => a + factTot(fm, d), 0);
+  const fAll = Object.keys(fm).reduce((a, d) => a + factTot(fm, d), 0);
+  const pAll = PLAN.days.reduce((a, x) => a + planTot(x.d), 0);
+  const pPrCum = pastDays.reduce((a, x) => a + planProfit(x.d), 0);
+  const fPrCum = Object.keys(fm).filter(d => d <= cut).reduce((a, d) => a + factProfit(fm, d), 0);
+  const left = pAll - fAll, daysLeft = PLAN.days.filter(x => x.d > cut && planTot(x.d) > 0).length + (fm[cut] ? 0 : 1);
+  const devCls = fCum >= pCum ? 'pos' : 'neg';
+  $('#planKpis').innerHTML =
+    kpi('Сегодня: план / факт', `${fmtN(planTot(cut))} / ${fm[cut] ? fmtN(factTot(fm, cut)) : '—'}`, ruDate(cut)) +
+    kpi('С начала: план / факт', `${fmtN(pCum)} / ${fmtN(fCum)}`, `<span class="${devCls}">${fCum - pCum >= 0 ? '+' : ''}${fmtN(fCum - pCum)} шт</span>`) +
+    kpi('Выполнение плана', `<span class="${devCls}">${pct(fCum, pCum)}</span>`, 'накопленно на сегодня', 'hl') +
+    kpi('Прибыль: план / факт', `${fmtN(pPrCum / 1000)}k / ${fmtN(fPrCum / 1000)}k`, `<span class="${fPrCum >= pPrCum ? 'pos' : 'neg'}">${fmt(fPrCum - pPrCum)}</span>`) +
+    kpi('Продано из заказа', `${fmtN(fAll)} / ${fmtN(pAll)}`, pct(fAll, pAll)) +
+    kpi('Нужный темп', daysLeft ? `${fmtN(Math.ceil(left / daysLeft))} шт/день` : '—', `осталось ${fmtN(left)} шт · ${daysLeft} дн.`);
+  // графики
+  const labels = PLAN.days.map(x => x.d.slice(8, 10) + '.' + x.d.slice(5, 7));
+  let pc = 0, fc = 0;
+  const cumP = PLAN.days.map(x => (pc += planTot(x.d))), cumF = PLAN.days.map(x => x.d <= cut ? (fc += factTot(fm, x.d)) : null);
+  const qOpts = { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtN(c.raw)} шт` } } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } } } };
+  chart('planCumChart', { type: 'line', data: { labels, datasets: [
+    { label: 'План', data: cumP, borderColor: '#e8c26b', backgroundColor: 'rgba(232,194,107,.12)', fill: true, pointRadius: 0, tension: .25 },
+    { label: 'Факт', data: cumF, borderColor: '#4cc28a', backgroundColor: '#4cc28a', pointRadius: 2, tension: .25, spanGaps: false }] }, options: qOpts });
+  chart('planDayChart', { type: 'bar', data: { labels, datasets: [
+    { label: 'План', data: PLAN.days.map(x => planTot(x.d)), backgroundColor: 'rgba(232,194,107,.45)', borderRadius: 3 },
+    { label: 'Факт', data: PLAN.days.map(x => fm[x.d] ? factTot(fm, x.d) : null), backgroundColor: 'rgba(76,194,138,.85)', borderRadius: 3 }] }, options: qOpts });
+  // по моделям
+  const bar = (a, b) => `<div class="pbar"><i class="${b && a / b < .9 ? 'low' : ''}" style="width:${Math.min(100, b ? a / b * 100 : 0)}%"></i></div>`;
+  $('#planModels').innerHTML = `<thead><tr><th>Модель</th><th class="n">Заказано</th><th class="n">План на сегодня</th><th class="n">Факт</th><th>Выполнение</th><th class="n">%</th><th class="n">Остаток, шт</th><th class="n">Прибыль факт</th></tr></thead><tbody>` +
+    PM.map(m => { const pp = pastDays.reduce((a, x) => a + planQ(x.d, m), 0), ff = Object.keys(fm).filter(d => d <= cut).reduce((a, d) => a + (fm[d][m] || 0), 0);
+      const ord = PLAN.info[m]?.ordered ?? PLAN.days.reduce((a, x) => a + planQ(x.d, m), 0), fa = Object.values(fm).reduce((a, x) => a + (x[m] || 0), 0);
+      return `<tr><td><b>${esc(m)}</b></td><td class="n">${fmtN(ord)}</td><td class="n">${fmtN(pp)}</td><td class="n">${fmtN(ff)}</td><td>${bar(ff, pp)}</td><td class="n ${pp && ff < pp ? 'neg' : 'pos'}">${pp ? pct(ff, pp) : '—'}</td><td class="n">${fmtN(ord - fa)}</td><td class="n">${fmt(ff * (PLAN.profit[m] || 0))}</td></tr>`; }).join('') +
+    `<tr><td><b>Итого</b></td><td class="n"><b>${fmtN(pAll)}</b></td><td class="n"><b>${fmtN(pCum)}</b></td><td class="n"><b>${fmtN(fCum)}</b></td><td>${bar(fCum, pCum)}</td><td class="n"><b>${pct(fCum, pCum)}</b></td><td class="n"><b>${fmtN(pAll - fAll)}</b></td><td class="n"><b>${fmt(fPrCum)}</b></td></tr></tbody>`;
+  // по неделям
+  $('#planWeeks').innerHTML = `<thead><tr><th>Неделя</th><th class="n">План, шт</th><th class="n">Факт, шт</th><th>Выполнение</th><th class="n">%</th><th class="n">План прибыли</th><th class="n">Факт прибыли</th></tr></thead><tbody>` +
+    PLAN.weeks.map(([n, a, b]) => { const ds = PLAN.days.filter(x => x.d >= a && x.d <= b), p = ds.reduce((s, x) => s + planTot(x.d), 0), f = ds.reduce((s, x) => s + factTot(fm, x.d), 0);
+      const pp = ds.reduce((s, x) => s + planProfit(x.d), 0), fp = ds.reduce((s, x) => s + factProfit(fm, x.d), 0), cur = cut >= a && cut <= b, started = a <= cut;
+      return `<tr class="${cur ? 'today' : ''}"><td>${n}${cur ? ' <span class="tag today">сейчас</span>' : ''}</td><td class="n">${fmtN(p)}</td><td class="n">${started ? fmtN(f) : '—'}</td><td>${started ? bar(f, p) : ''}</td><td class="n">${started ? pct(f, p) : '—'}</td><td class="n">${fmt(pp)}</td><td class="n">${started ? fmt(fp) : '—'}</td></tr>`; }).join('') + '</tbody>';
+}
+
 /* ================= Навигация и рендер ================= */
 let current = lsGet('fnix_tab', 'kaspi');
 function showTab(t) {
@@ -977,7 +1102,7 @@ function showTab(t) {
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 function render() {
   fillDatalists();
-  ({ kaspi: renderKaspi, cost: renderCost, dds: renderDds, pnl: renderPnl, opt: renderOpt, trucks: renderTrucks })[current]();
+  ({ plan: renderPlan, kaspi: renderKaspi, cost: renderCost, dds: renderDds, pnl: renderPnl, opt: renderOpt, trucks: renderTrucks })[current]();
 }
 
 /* ================= Вход и роли ================= */

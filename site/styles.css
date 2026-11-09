@@ -255,3 +255,19 @@ button.bar-row:hover .bar i{background:linear-gradient(90deg,#a87b22,var(--gold)
 .drill-list>div{display:flex;justify-content:space-between;gap:10px;background:rgba(4,14,24,.4);border-radius:10px;padding:8px 10px;font-size:13px}
 .drill-list small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 .drill-list b{white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* План продаж */
+.plan-day-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:6px 0 12px}
+.plan-day-head label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-weight:600}
+.plan-day-head input{width:auto}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.plan-cell{background:rgba(4,14,24,.45);border:1px solid var(--card-b);border-radius:12px;padding:8px 10px}
+.plan-cell .m{font-weight:700;font-size:13px;display:flex;justify-content:space-between;gap:6px}
+.plan-cell .m small{color:var(--muted);font-weight:500}
+.plan-cell input{margin-top:6px;text-align:right;font-size:16px;font-weight:700}
+.plan-cell.done{border-color:rgba(76,194,138,.45)}
+.plan-cell.below{border-color:rgba(224,90,82,.45)}
+.pbar{height:6px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden;min-width:80px}
+.pbar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--pine),var(--green))}
+.pbar i.low{background:linear-gradient(90deg,#8a2f2a,var(--red))}
+tr.today td{background:rgba(232,194,107,.07)}
