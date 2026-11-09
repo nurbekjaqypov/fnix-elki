@@ -290,3 +290,14 @@ tr.today td{background:rgba(232,194,107,.07)}
 @keyframes aur4{0%,100%{transform:translateX(-5%) skewX(-18deg) scaleY(.9);opacity:.25}50%{transform:translateX(5%) skewX(12deg) scaleY(1.1);opacity:.55}}
 @media (prefers-reduced-motion:reduce){.aurora i{animation:none;opacity:.4}}
 @media (max-width:560px){.aurora i{filter:blur(32px)}}
+
+/* Вкладки читаемы поверх сияния */
+.tabs{background:rgba(5,14,26,.62);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);
+  border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:6px;margin-bottom:14px;width:max-content;max-width:100%;
+  box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.tabs button{color:#e6eef5;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.tabs button:hover{color:#fff;background:rgba(255,255,255,.07)}
+.tabs button.active{text-shadow:none}
+.brand-sub{color:#c9d6e2;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.brand-name{filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))}
+.sync{background:rgba(5,14,26,.62);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#d5e0ea}
