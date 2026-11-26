@@ -28,7 +28,8 @@
           "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-g2104-210-sm-pvh-129813230/"
         }
       ],
-      "group": "pvc"
+      "group": "pvc",
+      "gift": "Украшения в подарок"
     },
     {
       "id": "pvc-snow",
@@ -46,7 +47,8 @@
           "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-sg2104-210-sm-pvh-129813252/"
         }
       ],
-      "group": "pvc"
+      "group": "pvc",
+      "gift": "Украшения в подарок"
     },
     {
       "id": "cast-blue",

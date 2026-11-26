@@ -29,6 +29,11 @@
   .brand{font-weight:800;letter-spacing:.32em;font-size:13px;color:var(--gold)}
   h1{font-family:"Playfair Display",serif;font-size:34px;line-height:1.08;margin:14px 0 10px}
   .lead{color:#cfe0d6;font-size:15px;line-height:1.5}
+  .how{list-style:none;margin-top:16px;display:grid;gap:8px}
+  .how li{display:flex;gap:11px;align-items:center;background:#ffffff12;border:1px solid #ffffff1f;border-radius:12px;padding:10px 12px}
+  .how span{flex:none;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--bg);font-weight:800;font-size:14px;display:grid;place-items:center}
+  .how div{font-size:13px;color:#cfe0d6;line-height:1.35}
+  .how b{display:block;color:#fff;font-size:14.5px}
   .perks{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
   .perk{font-size:12.5px;font-weight:700;padding:7px 11px;border-radius:99px;background:#ffffff14;border:1px solid #ffffff22}
 
@@ -47,6 +52,8 @@
   .pic{aspect-ratio:3/5;border-radius:11px;overflow:hidden;background:linear-gradient(#eef3ee,#dfe8e1);display:grid;place-items:center;position:relative}
   .pic img{width:100%;height:100%;object-fit:cover;object-position:center top}
   .pic svg{width:78%;height:auto}
+  .gift{position:absolute;top:7px;left:7px;right:7px;font-size:11px;font-weight:800;background:#c8312a;color:#fff;padding:4px 7px;border-radius:7px;text-align:center;box-shadow:0 2px 6px #0003}
+  .chosen .gift-line{color:#c8312a;font-weight:800;font-size:13px;margin-top:3px}
   .tag{position:absolute;bottom:7px;left:7px;font-size:10.5px;font-weight:800;background:#fff;padding:3px 7px;border-radius:6px}
   .m b{display:block;font-size:14px;line-height:1.25;margin:9px 0 4px;min-height:35px}
   .from{font-size:13px;color:var(--muted)}
@@ -87,8 +94,13 @@
   <div class="wrap" style="position:relative">
     <div class="brand">FNIX</div>
     <h1>Ёлка, которая будет с вами много лет</h1>
-    <p class="lead">Выберите модель и высоту — откроем её в нашем магазине на Kaspi: оплата, рассрочка и доставка там же.</p>
-    <div class="perks"><span class="perk">🚚 Доставка Kaspi</span><span class="perk">💳 Рассрочка</span><span class="perk">🎄 Пышная, без проплешин</span></div>
+    <p class="lead">Здесь вы только выбираете ёлку. Покупка и доставка — в нашем магазине на Kaspi.</p>
+    <ol class="how">
+      <li><span>1</span><div><b>Выберите модель</b>ПВХ или люкс из литой хвои</div></li>
+      <li><span>2</span><div><b>Выберите высоту</b>180, 210 или 240 см</div></li>
+      <li><span>3</span><div><b>Перейдите в наш магазин на Kaspi</b>Укажите адрес — бесплатно доставим до дома</div></li>
+    </ol>
+    <div class="perks"><span class="perk">🚚 Бесплатная доставка до дома</span><span class="perk">💳 Рассрочка Kaspi</span><span class="perk">🎁 Украшения в подарок к ёлкам ПВХ</span></div>
   </div>
 </header>
 
@@ -146,7 +158,7 @@ function renderModels(){
   document.getElementById("models").innerHTML = GROUPS.map(g=>{
     const ms = MODELS.filter(m=>m.group===g.id);
     return `<div class="grp"><h3>${g.title}</h3><p>${g.sub}</p></div><div class="grid">${ms.map(m=>
-      `<button class="m ${cur===m?"on":""}" data-id="${m.id}">${pic(m,`<span class="tag">${m.material}</span>`)}<b>${m.name}</b><div class="from">${hs(m)}</div></button>`).join("")}</div>`;
+      `<button class="m ${cur===m?"on":""}" data-id="${m.id}">${pic(m,`${m.gift?`<span class="gift">🎁 ${m.gift}</span>`:""}<span class="tag">${m.material}</span>`)}<b>${m.name}</b><div class="from">${hs(m)}</div></button>`).join("")}</div>`;
   }).join("");
 }
 
@@ -154,7 +166,7 @@ function renderSizes(){
   const box=document.getElementById("sizebox");
   if(!cur) return;
   const list=sizesOf(cur);
-  box.innerHTML = `<div class="chosen">${pic(cur)}<div><b>${cur.name}</b><p>${cur.desc}</p></div></div>` +
+  box.innerHTML = `<div class="chosen">${pic(cur)}<div><b>${cur.name}</b><p>${cur.desc}</p>${cur.gift?`<div class="gift-line">🎁 ${cur.gift}</div>`:""}</div></div>` +
     `<div class="sz">${list.map((s,i)=>`<button class="s ${curSize===s?"on":""}" data-i="${i}"><div class="h">${s.h}</div></button>`).join("")}</div>`;
 }
 
