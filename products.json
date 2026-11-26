@@ -70,7 +70,8 @@
           "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-lux-b-240-sm-litaja-150098965/"
         }
       ],
-      "group": "lux"
+      "group": "lux",
+      "gift": "Украшения в подарок"
     },
     {
       "id": "cast-green",
@@ -92,7 +93,8 @@
           "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-lux-a-240-litaja-150091573/"
         }
       ],
-      "group": "lux"
+      "group": "lux",
+      "gift": "Украшения в подарок"
     }
   ]
 }
