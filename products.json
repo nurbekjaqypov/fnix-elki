@@ -1,0 +1,96 @@
+{
+  "groups": [
+    {
+      "id": "pvc",
+      "title": "Ёлки из ПВХ",
+      "sub": "Пушистая мягкая хвоя, лёгкие и доступные"
+    },
+    {
+      "id": "lux",
+      "title": "Люкс ёлки из литой хвои",
+      "sub": "Литая хвоя 100% — не отличить от живой ели"
+    }
+  ],
+  "models": [
+    {
+      "id": "pvc-green",
+      "name": "Зелёная пушистая ель",
+      "material": "ПВХ",
+      "desc": "Классическая густая ель, мягкая хвоя, как живая",
+      "img": "img/pvc-green.jpg",
+      "sizes": [
+        {
+          "h": "180 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-g1804-razbornaja-180-d-nizhnih-vetok-125-sm-129813231/"
+        },
+        {
+          "h": "210 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-g2104-210-sm-pvh-129813230/"
+        }
+      ],
+      "group": "pvc"
+    },
+    {
+      "id": "pvc-snow",
+      "name": "Пушистая ель со снежными кончиками",
+      "material": "ПВХ",
+      "desc": "Зелёная ель с заснеженными кончиками веток",
+      "img": "img/pvc-snow.jpg",
+      "sizes": [
+        {
+          "h": "180 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-sg1804-180-sm-pvh-129813258/"
+        },
+        {
+          "h": "210 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-sg2104-210-sm-pvh-129813252/"
+        }
+      ],
+      "group": "pvc"
+    },
+    {
+      "id": "cast-blue",
+      "name": "Голубая литая ель",
+      "material": "Литая хвоя",
+      "desc": "Благородный голубой оттенок, реалистичная литая хвоя",
+      "img": "img/cast-blue.jpg",
+      "sizes": [
+        {
+          "h": "180 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-jolka-fnix-lux-b180-150093153/"
+        },
+        {
+          "h": "210 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-jolka-fnix-lux-b-210-litaja-150098411/"
+        },
+        {
+          "h": "240 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-lux-b-240-sm-litaja-150098965/"
+        }
+      ],
+      "group": "lux"
+    },
+    {
+      "id": "cast-green",
+      "name": "Зелёная литая ель",
+      "material": "Литая хвоя",
+      "desc": "Литая хвоя, не отличить от живой ели",
+      "img": "img/cast-green.jpg",
+      "sizes": [
+        {
+          "h": "180 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-lux-a-180-litaja-150090579/"
+        },
+        {
+          "h": "210 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-lux-a-210-litaja-150090999/"
+        },
+        {
+          "h": "240 см",
+          "kaspi": "https://kaspi.kz/shop/p/novogodnjaja-elka-fnix-lux-a-240-litaja-150091573/"
+        }
+      ],
+      "group": "lux"
+    }
+  ]
+}

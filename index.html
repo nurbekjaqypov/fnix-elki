@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Искусственные ёлки FNIX — купить на Kaspi</title>
+<meta name="description" content="Искусственные ёлки FNIX: ПВХ и литые. Выберите модель и размер и купите на Kaspi в рассрочку.">
+<meta property="og:title" content="Искусственные ёлки FNIX">
+<meta property="og:description" content="4 модели, все размеры. Покупка на Kaspi.">
+<meta name="theme-color" content="#0d2a1f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d2a1f; --bg2:#123a2b; --card:#fffdf7; --ink:#142019; --muted:#6b756f;
+    --gold:#e8c37a; --kaspi:#f14635; --line:#e7e2d6; --ok:#1f7a4d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Manrope,system-ui,sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:560px;margin:0 auto;padding:0 16px}
+
+  /* hero */
+  header{position:relative;overflow:hidden;color:#fff;padding:28px 0 26px;
+    background:radial-gradient(120% 90% at 80% 0%,#1d5a41 0%,var(--bg) 60%)}
+  .snow{position:absolute;inset:0;pointer-events:none;
+    background-image:radial-gradient(2px 2px at 20px 30px,#fff8 50%,transparent 51%),radial-gradient(1.5px 1.5px at 120px 80px,#fff6 50%,transparent 51%),radial-gradient(2px 2px at 220px 20px,#fff5 50%,transparent 51%),radial-gradient(1px 1px at 300px 110px,#fff8 50%,transparent 51%);
+    background-size:340px 140px}
+  .brand{font-weight:800;letter-spacing:.32em;font-size:13px;color:var(--gold)}
+  h1{font-family:"Playfair Display",serif;font-size:34px;line-height:1.08;margin:14px 0 10px}
+  .lead{color:#cfe0d6;font-size:15px;line-height:1.5}
+  .perks{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+  .perk{font-size:12.5px;font-weight:700;padding:7px 11px;border-radius:99px;background:#ffffff14;border:1px solid #ffffff22}
+
+  main{background:#f4f0e6;border-radius:22px 22px 0 0;padding:22px 0 120px;min-height:60vh}
+  .step{font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+  h2{font-size:21px;margin:4px 0 14px}
+
+  /* models */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grp{margin:18px 0 10px}.grp:first-child{margin-top:4px}
+  .grp h3{font-size:17px}.grp p{font-size:13px;color:var(--muted);margin-top:2px}
+  .m{background:var(--card);border:2px solid transparent;border-radius:16px;padding:10px 10px 12px;text-align:left;cursor:pointer;font:inherit;color:inherit;
+     box-shadow:0 1px 0 var(--line),0 6px 18px -12px #0004;transition:transform .15s,border-color .15s}
+  .m:active{transform:scale(.98)}
+  .m.on{border-color:var(--ok)}
+  .pic{aspect-ratio:3/5;border-radius:11px;overflow:hidden;background:linear-gradient(#eef3ee,#dfe8e1);display:grid;place-items:center;position:relative}
+  .pic img{width:100%;height:100%;object-fit:cover;object-position:center top}
+  .pic svg{width:78%;height:auto}
+  .tag{position:absolute;bottom:7px;left:7px;font-size:10.5px;font-weight:800;background:#fff;padding:3px 7px;border-radius:6px}
+  .m b{display:block;font-size:14px;line-height:1.25;margin:9px 0 4px;min-height:35px}
+  .from{font-size:13px;color:var(--muted)}
+  .from strong{color:var(--ink);font-size:15px}
+
+  /* sizes */
+  #sizes{margin-top:26px;scroll-margin-top:14px}
+  .chosen{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:14px;padding:10px;margin-bottom:12px}
+  .chosen .pic{width:64px;flex:none;border-radius:9px}
+  .chosen p{font-size:13px;color:var(--muted);margin-top:2px}
+  .sz{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .s{background:var(--card);border:2px solid var(--line);border-radius:13px;padding:12px;cursor:pointer;font:inherit;color:inherit;text-align:left}
+  .s.on{border-color:var(--ok);background:#f0f8f2}
+  .s .h{font-weight:800;font-size:18px}
+  .s .p{font-size:14px;margin-top:3px}
+  .old{color:var(--muted);text-decoration:line-through;font-size:12.5px;margin-left:4px}
+  .hint{color:var(--muted);font-size:14px;padding:16px;text-align:center;background:var(--card);border-radius:13px}
+
+  /* buy bar */
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+       transform:translateY(110%);visibility:hidden;transition:transform .25s,visibility .25s;z-index:5;box-shadow:0 -10px 30px -18px #0005}
+  .bar.show{transform:none;visibility:visible}
+  .bar .wrap{display:flex;align-items:center;gap:12px;padding:0}
+  .price{flex:1;min-width:0}
+  .price .now{font-size:15px;font-weight:800;line-height:1.25}
+  .price small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{background:var(--kaspi);color:#fff;font-size:12px;font-weight:800;border-radius:6px;padding:2px 6px;margin-left:6px;vertical-align:4px}
+  .buy{background:var(--kaspi);color:#fff;text-decoration:none;font-weight:800;font-size:14.5px;padding:13px 14px;border-radius:13px;text-align:center;line-height:1.2;max-width:58%}
+  .buy:active{filter:brightness(.92)}
+  footer{color:#9fb5a9;font-size:12px;text-align:center;padding:20px 16px 110px;background:#f4f0e6}
+  .sk{display:inline-block;width:70px;height:14px;border-radius:4px;background:linear-gradient(90deg,#e8e3d8,#f6f2e9,#e8e3d8);background-size:200%;animation:sh 1.2s infinite;vertical-align:-2px}
+  @keyframes sh{to{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<header>
+  <div class="snow"></div>
+  <div class="wrap" style="position:relative">
+    <div class="brand">FNIX</div>
+    <h1>Ёлка, которая будет с вами много лет</h1>
+    <p class="lead">Выберите модель и высоту — откроем её в нашем магазине на Kaspi: оплата, рассрочка и доставка там же.</p>
+    <div class="perks"><span class="perk">🚚 Доставка Kaspi</span><span class="perk">💳 Рассрочка</span><span class="perk">🎄 Пышная, без проплешин</span></div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="step">Шаг 1</div>
+    <h2>Выберите модель</h2>
+    <div id="models"></div>
+
+    <section id="sizes">
+      <div class="step">Шаг 2</div>
+      <h2>Выберите высоту</h2>
+      <div id="sizebox"><div class="hint">Сначала выберите модель выше ☝️</div></div>
+    </section>
+  </div>
+</main>
+<footer>FNIX · Grantel · покупка и доставка через Kaspi.kz</footer>
+
+<div class="bar" id="bar">
+  <div class="wrap">
+    <div class="price"><div class="now" id="barName"></div><small id="barH"></small></div>
+    <a class="buy" id="buy" href="#" target="_blank" rel="noopener">Перейти в KASPI магазин</a>
+  </div>
+</div>
+
+<script>
+// ---- Настройка: ID пикселя Meta (необязательно) ----
+const PIXEL_ID = "";
+
+const TREES = {
+  "pvc-green":  {fill:"#2f7d4a", dark:"#1f5c35", tips:null},
+  "pvc-snow":   {fill:"#2f7d4a", dark:"#1f5c35", tips:"#ffffff"},
+  "cast-blue":  {fill:"#6f9fae", dark:"#4f7f8f", tips:"#d7eaf0"},
+  "cast-green": {fill:"#3c8a52", dark:"#246a3b", tips:"#7fbf8c"},
+};
+function treeSVG(id){
+  const t = TREES[id] || TREES["pvc-green"];
+  const tiers = [[60,28,70],[52,55,92],[42,85,116],[30,118,140]]; // halfWidth, top, bottom
+  let s = `<svg viewBox="0 0 120 170" xmlns="http://www.w3.org/2000/svg"><rect x="54" y="138" width="12" height="18" rx="2" fill="#6b4a2e"/>`;
+  tiers.slice().reverse().forEach(([w,top,bot],i)=>{
+    const pts=[`60,${top}`]; const n=7;
+    for(let k=0;k<=n;k++){const x=60+w-(2*w*k/n); pts.push(`${x},${bot-(k%2?6:0)}`);}
+    s+=`<polygon points="${pts.join(" ")}" fill="${i%2?t.fill:t.dark}"/>`;
+    if(t.tips) for(let k=0;k<=n;k+=1){const x=60+w-(2*w*k/n); s+=`<circle cx="${x}" cy="${bot-(k%2?6:1)}" r="${id==="pvc-snow"?3.6:2.2}" fill="${t.tips}"/>`;}
+  });
+  s+=`<polygon points="60,6 63.5,15 73,15 65.5,20.5 68.5,29.5 60,24 51.5,29.5 54.5,20.5 47,15 56.5,15" fill="#e8c37a"/></svg>`;
+  return s;
+}
+const pic = (m, extra="") => `<div class="pic">${m.img?`<img src="${m.img}" alt="${m.name}" loading="lazy">`:treeSVG(m.id)}${extra}</div>`;
+let MODELS=[], GROUPS=[], cur=null, curSize=null;
+function sizesOf(m){ return m.sizes.filter(s => s.kaspi); }
+const hs = m => sizesOf(m).map(s=>s.h.replace(" см","")).join(" · ") + " см";
+
+function renderModels(){
+  document.getElementById("models").innerHTML = GROUPS.map(g=>{
+    const ms = MODELS.filter(m=>m.group===g.id);
+    return `<div class="grp"><h3>${g.title}</h3><p>${g.sub}</p></div><div class="grid">${ms.map(m=>
+      `<button class="m ${cur===m?"on":""}" data-id="${m.id}">${pic(m,`<span class="tag">${m.material}</span>`)}<b>${m.name}</b><div class="from">${hs(m)}</div></button>`).join("")}</div>`;
+  }).join("");
+}
+
+function renderSizes(){
+  const box=document.getElementById("sizebox");
+  if(!cur) return;
+  const list=sizesOf(cur);
+  box.innerHTML = `<div class="chosen">${pic(cur)}<div><b>${cur.name}</b><p>${cur.desc}</p></div></div>` +
+    `<div class="sz">${list.map((s,i)=>`<button class="s ${curSize===s?"on":""}" data-i="${i}"><div class="h">${s.h}</div></button>`).join("")}</div>`;
+}
+
+function renderBar(){
+  const bar=document.getElementById("bar");
+  if(!curSize){bar.classList.remove("show");return;}
+  document.getElementById("barName").textContent = cur.name;
+  document.getElementById("barH").textContent = curSize.h;
+  document.getElementById("buy").href = curSize.kaspi;
+  bar.classList.add("show");
+}
+
+document.addEventListener("click",e=>{
+  const m=e.target.closest(".m");
+  if(m){
+    cur=MODELS.find(x=>x.id===m.dataset.id); curSize=null;
+    renderModels(); renderSizes(); renderBar();
+    document.getElementById("sizes").scrollIntoView({behavior:"smooth"});
+    track("ViewContent",{content_name:cur.name});
+    return;
+  }
+  const s=e.target.closest(".s");
+  if(s){ curSize=sizesOf(cur)[+s.dataset.i]; renderSizes(); renderBar(); return; }
+  if(e.target.closest("#buy")) track("Lead",{content_name:`${cur.name} ${curSize.h}`});
+});
+
+function track(ev,data){ try{ window.fbq && fbq("track",ev,data);}catch(_){} }
+if(PIXEL_ID){
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq("init",PIXEL_ID); fbq("track","PageView");
+}
+
+(async()=>{
+  const cfg = await (await fetch("products.json",{cache:"no-store"})).json();
+  MODELS = cfg.models; GROUPS = cfg.groups; renderModels();
+})();
+</script>
+</body>
+</html>
